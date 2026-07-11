@@ -12,6 +12,25 @@ const NAVIGATE_EVENT = 'growi-pwc-navigate';
 // 実際の GROWI 環境で複数ヒットするようであればセレクタを絞り込む必要がある(要実機確認)。
 const WIKI_SELECTOR = '.wiki';
 
+// カウント対象から完全除外する要素のセレクタ。
+// コードブロックは GROWI が `<pre><div>...<code>` という構造でレンダリングするため
+// `pre` を除外すれば内部の `<code>` ごと除去できる（インラインコードの `<code>` は対象外）。
+//
+// drawio ブロックは `<div class="drawio-viewer ...">` 配下に `data-mxgraph` 属性として
+// 図面 XML を保持する（属性値なので textContent には元々含まれない）が、SVG 内の
+// `<foreignObject><div>` として図形ラベルの実テキストノードが存在し、これはカウントに
+// 混入してしまうため要素ごと除外する。`_drawio-viewer_xxxxx_N` という CSS Modules 由来の
+// ハッシュ付きクラスはバージョンで変わりうるため使わず、素の `drawio-viewer` を使う。
+//
+// KaTeX 数式は `<span class="katex">`（インライン）/ `<span class="katex-display"><span class="katex">`
+// （ブロック）としてレンダリングされる。`.katex` 配下には
+//   - `.katex-mathml`: スクリーンリーダー向けの隠し MathML 層。中の <annotation> に
+//     生の TeX ソース（`\begin{pmatrix}...` 等）がテキストノードとして残る
+//   - `.katex-html`: 実際に画面表示される層。同じ数字・記号を再度テキストノードとして持つ
+// の2層があり、同じ内容が重複して textContent に含まれるため素朴に数えると二重カウントに
+// なる。`.katex` ごと除外することで二重カウントと TeX ソース混入の両方を解消する。
+const EXCLUDED_SELECTORS = ['pre', '.drawio-viewer', '.katex'];
+
 // UI に表示する指標のフラグ。stats.ts では常に全指標を計算しているため、
 // 将来的に単語数・読了時間を表示する場合はここを true にするだけでよい。
 const SHOW_CHARS_WITH_SPACES = true;
@@ -48,15 +67,16 @@ const getExistingWidget = (wiki: HTMLElement): HTMLElement | null =>
   wiki.querySelector<HTMLElement>(`:scope > .${WIDGET_CLASS}`);
 
 /**
- * 本文テキストを取得する。自分自身が注入したウィジェットの文字列は
- * カウントに混入しないよう、存在すれば除外する。
+ * 本文テキストを取得する。自分自身が注入したウィジェットの文字列と、
+ * EXCLUDED_SELECTORS に該当する要素（コードブロックなど）はカウントに
+ * 混入しないよう除外する。
  */
 const getBodyText = (wiki: HTMLElement): string => {
-  const existingWidget = getExistingWidget(wiki);
-  if (!existingWidget) return wiki.textContent ?? '';
-
   const clone = wiki.cloneNode(true) as HTMLElement;
   clone.querySelector(`:scope > .${WIDGET_CLASS}`)?.remove();
+  EXCLUDED_SELECTORS.forEach((selector) => {
+    clone.querySelectorAll(selector).forEach((el) => el.remove());
+  });
   return clone.textContent ?? '';
 };
 
