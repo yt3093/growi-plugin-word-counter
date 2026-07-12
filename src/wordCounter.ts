@@ -234,7 +234,26 @@ const scheduleScan = (): void => {
 /** 自分自身が注入したウィジェット由来の mutation かどうか */
 const isSelfInjected = (node: Node): boolean => node instanceof HTMLElement && node.classList.contains(WIDGET_CLASS);
 
+/** ノード自身が `.wiki` に一致するか、その子孫に `.wiki` を含むか */
+const nodeIsOrContainsWiki = (node: Node): boolean => {
+  if (!(node instanceof Element)) return false;
+  return node.matches(WIKI_SELECTOR) || node.querySelector(WIKI_SELECTOR) !== null;
+};
+
+/**
+ * `.wiki` と無関係な DOM 変更（ヘッダーの通知バッジ・サイドバー等）を無視するための判定。
+ * 既存の `.wiki` の内部で起きた変更か、`.wiki` 自体が丸ごと追加/削除された変更のみ関心対象とする。
+ */
+const isWikiRelatedMutation = (mutation: MutationRecord, wiki: HTMLElement | null): boolean => {
+  if (wiki && wiki.contains(mutation.target)) return true;
+  return (
+    Array.from(mutation.addedNodes).some(nodeIsOrContainsWiki) ||
+    Array.from(mutation.removedNodes).some(nodeIsOrContainsWiki)
+  );
+};
+
 const handleMutations = (mutations: MutationRecord[]): void => {
+  const wiki = getMainWiki();
   let relevant = false;
 
   for (const mutation of mutations) {
@@ -246,6 +265,8 @@ const handleMutations = (mutations: MutationRecord[]): void => {
       }
       continue;
     }
+
+    if (!isWikiRelatedMutation(mutation, wiki)) continue;
 
     const hasRealAddition = Array.from(mutation.addedNodes).some((n) => !isSelfInjected(n));
     const hasRealRemoval = Array.from(mutation.removedNodes).some((n) => !isSelfInjected(n));

@@ -16,6 +16,7 @@
 | 非表示条件 | 管理画面（`/admin`）・編集モード（`/edit`, `#edit`, `body.editing`, `body.grw-editor-mode`, `body.modal-open`）では非表示 |
 | SPA 遷移 | `pushState` / `replaceState` モンキーパッチ + `popstate` + `hashchange` で再スキャン |
 | 動的追加対応 | `MutationObserver` で本文の変化・再レンダリングを検知し再計算 |
+| MutationObserver のスコープ限定 | `document.body` 全体を監視しているが、`isWikiRelatedMutation` で `.wiki` の内部で起きた変更、または `.wiki` 自体が丸ごと追加/削除された変更のみを再計算対象とする。ヘッダー通知バッジやサイドバー等 `.wiki` と無関係な DOM 変更では再計算・ウィジェット再構築が走らない |
 | 自己参照除外 | ウィジェット自身の textContent（`📝 N字` 等）はカウント対象から除外（`getBodyText` が一時的に clone から除去して集計） |
 | ブロック境界対応テキスト抽出 | `getBodyText` は素の `textContent` ではなく `extractTextWithBlockBreaks` を使う。`<h2>見出し</h2><p>本文</p>` のような隣接ブロック要素の間に区切り（`\n`）を挿入しながらテキストを収集するため、`words` 計算時に境界の単語が誤って結合されない。`BLOCK_TAGS` 定数（`p`/`div`/`li`/`h1`-`h6`/`table` 系/`br` 等）で対象タグを管理 |
 | 日本語対応の単語数カウント | `stats.ts` の `countWords` は `Intl.Segmenter`（`granularity: 'word'`）を使い、スペース区切りが無い日本語文でも意味のある単語単位に分割してカウントする（ライブラリ追加不要）。未対応の古い環境向けにスペース区切りへのフォールバックを用意 |
@@ -86,7 +87,9 @@ growi-plugin-word-counter/
 
 - **SPA 遷移検知**: `pushState` / `replaceState` にカスタムイベント `growi-pwc-navigate` をディスパッチするモンキーパッチ。`popstate` / `hashchange` も購読し、いずれも `scheduleScan()`（2 段 `requestAnimationFrame` で DOM 安定後に `scanAndEnhance()`）を呼ぶ。
 
-- **MutationObserver**: `document.body` を `childList: true, subtree: true, attributes: true, attributeFilter: ['class']` で監視。`isSelfInjected(node)`（`.gpwc-widget` クラス判定）で自己注入ノードの追加/削除を除外し、無限ループを防止。`attributes` タイプの mutation は `target === document.body` の場合のみ関心対象とする（編集モード遷移など body クラス変化の検知）。関心対象の mutation があれば `isHiddenContext()` を判定し、true なら `cleanupAll()`、false なら `scheduleScan()`。
+- **MutationObserver**: `document.body` を `childList: true, subtree: true, attributes: true, attributeFilter: ['class']` で監視。`attributes` タイプの mutation は `target === document.body` の場合のみ関心対象とする（編集モード遷移など body クラス変化の検知）。`childList` タイプの mutation は `isWikiRelatedMutation(mutation, wiki)` で `.wiki` 内部の変更か `.wiki` 自体の追加/削除かを判定し、無関係なら（ヘッダー通知バッジ・サイドバー等）スキップする。関心対象と判定されたものについてさらに `isSelfInjected(node)`（`.gpwc-widget` クラス判定）で自己注入ノードのみの追加/削除を除外し、無限ループを防止。最終的に関心対象の mutation があれば `isHiddenContext()` を判定し、true なら `cleanupAll()`、false なら `scheduleScan()`。
+
+- **`isWikiRelatedMutation(mutation, wiki)`**: `wiki.contains(mutation.target)` なら `.wiki` 内部の変更として true。それ以外は `mutation.addedNodes` / `removedNodes` に `.wiki` 自身またはその子孫を含む要素（`nodeIsOrContainsWiki`）があるかを見て、`.wiki` 自体が丸ごと追加/削除されたケース（例: SPA 遷移で GROWI が本文コンテナごと差し替える場合）も relevant と判定する。
 
 - **`isHiddenContext()`**: `/admin` / `/admin/*` パス、`#edit` / `/edit` サフィックス、`body.editing` / `body.grw-editor-mode` / `body.modal-open` クラスのいずれかで true を返す。
 
