@@ -34,7 +34,7 @@ const EXCLUDED_SELECTORS = ['pre', '.drawio-viewer', '.katex'];
 // UI に表示する指標のフラグ。stats.ts では常に全指標を計算しているため、
 // 将来的に単語数・読了時間を表示する場合はここを true にするだけでよい。
 const SHOW_CHARS_WITH_SPACES = true;
-const SHOW_CHARS_NO_SPACES = false;
+const SHOW_CHARS_NO_SPACES = true;
 const SHOW_WORDS = false;
 const SHOW_READING_MINUTES = false;
 
