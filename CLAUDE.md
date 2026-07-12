@@ -17,6 +17,8 @@
 | SPA 遷移 | `pushState` / `replaceState` モンキーパッチ + `popstate` + `hashchange` で再スキャン |
 | 動的追加対応 | `MutationObserver` で本文の変化・再レンダリングを検知し再計算 |
 | 自己参照除外 | ウィジェット自身の textContent（`📝 N字` 等）はカウント対象から除外（`getBodyText` が一時的に clone から除去して集計） |
+| ブロック境界対応テキスト抽出 | `getBodyText` は素の `textContent` ではなく `extractTextWithBlockBreaks` を使う。`<h2>見出し</h2><p>本文</p>` のような隣接ブロック要素の間に区切り（`\n`）を挿入しながらテキストを収集するため、`words` 計算時に境界の単語が誤って結合されない。`BLOCK_TAGS` 定数（`p`/`div`/`li`/`h1`-`h6`/`table` 系/`br` 等）で対象タグを管理 |
+| 日本語対応の単語数カウント | `stats.ts` の `countWords` は `Intl.Segmenter`（`granularity: 'word'`）を使い、スペース区切りが無い日本語文でも意味のある単語単位に分割してカウントする（ライブラリ追加不要）。未対応の古い環境向けにスペース区切りへのフォールバックを用意 |
 | コードブロック除外 | ` ``` ` で囲んだコードブロック（`<pre>` 要素、内部の `<code>` ごと）はカウント対象から除外。インラインコード（`` `code` ``）は除外しない。`EXCLUDED_SELECTORS` 配列で管理し、drawio・数式など追加除外対象を実機確認後に追加できる構造にしている |
 | drawio 除外 | `<div class="drawio-viewer">` 配下（図面 XML は `data-mxgraph` 属性値のため元々 `textContent` には含まれないが、SVG 内 `<foreignObject>` の図形ラベルは実テキストノードとしてカウントに混入するため）はカウント対象から除外。CSS Modules 由来のハッシュ付きクラス（`_drawio-viewer_xxxxx_N`）はバージョン間で変わるため使わず、素の `drawio-viewer` クラスで判定 |
 | KaTeX 数式除外 | `<span class="katex">`（インライン）/ `<span class="katex-display"><span class="katex">`（ブロック）をカウント対象から除外。`.katex` 配下は `.katex-mathml`（隠し MathML 層。`<annotation>` に生 TeX ソースを保持）と `.katex-html`（実表示層）の2層構造で、素朴に textContent を取ると同じ数字・記号が二重にカウントされるため、`.katex` ごと除外して二重カウントと TeX ソース混入を同時に解消している |
@@ -26,7 +28,6 @@
 
 ### 未実装（将来フェーズ）
 
-- **単語数（`words`）の精度**: `getBodyText` は `wiki.textContent` を使うため、隣接するブロック要素（`<p>` 等）の間に改行・スペースが自動挿入されず、単語が誤って連結される可能性がある（表示は有効化済みだが未修正の既知の問題）
 - 複数 `.wiki` が存在するページ（コメント欄など）でのセレクタ絞り込み精査（要実機確認）
 - 選択範囲のみのカウント（現状は本文全体のみが対象）
 - **MathJax 対応**: 実機で確認できた数式レンダリングは KaTeX（`.katex` クラス）のみで、`.katex` を `EXCLUDED_SELECTORS` に追加済み。GROWI が MathJax レンダリングも使うページがあれば DOM 構造（`.MathJax` / `mjx-container` 等、未確認）を確認の上セレクタを追加する
@@ -67,9 +68,13 @@ growi-plugin-word-counter/
 
 - **`getMainWiki()`**: `document.querySelector('.wiki')` で本文要素を取得。**現状は先頭 1 件のみを対象**にしており、コメント欄等で複数 `.wiki` がヒットするケースは未検証（要実機確認）。
 
-- **`getBodyText(wiki)`**: 既存ウィジェットが無ければ `wiki.textContent` をそのまま返す。既存ウィジェットがある場合は `wiki.cloneNode(true)` した上で clone 側のウィジェットのみ `remove()` し、`textContent` を取得する（元の DOM には触れない）。
+- **`getBodyText(wiki)`**: `wiki.cloneNode(true)` した clone から、自身のウィジェット（`:scope > .gpwc-widget`）と `EXCLUDED_SELECTORS`（`pre` / `.drawio-viewer` / `.katex`）に該当する要素を `remove()` してから `extractTextWithBlockBreaks(clone)` でテキストを収集する（元の DOM には触れない）。
 
-- **`computeStats(text)`**（`src/stats.ts`）: `charsWithSpaces`（`Array.from(text).length` でサロゲートペア考慮）・`charsNoSpaces`（`\s` 除去後の長さ）・`words`（`trim().split(/\s+/)` の要素数、空文字は 0）・`readingMinutes`（`Math.max(1, Math.ceil(charsNoSpaces / 500))`、日本語想定で 1 分 500 文字）を返す純粋関数。UI 表示の有無に関わらず常に全項目を計算する。
+- **`extractTextWithBlockBreaks(root)`**: `root.childNodes` を再帰的に walk し、テキストノードは `textContent` をそのまま集める。要素ノードは子を先に walk してから、`BLOCK_TAGS`（`p`/`div`/`li`/`h1`-`h6`/`table` 系/`br` 等）に該当するタグであれば末尾に `'\n'` を追加する。これにより `<h2>見出し</h2><p>本文</p>` のような隣接ブロック要素の境界にも区切りが入り、単純な `textContent` 結合で単語が誤って連結される問題を防ぐ。
+
+- **`computeStats(text)`**（`src/stats.ts`）: `charsWithSpaces`（`Array.from(text).length` でサロゲートペア考慮）・`charsNoSpaces`（`\s` 除去後の長さ）・`words`（`countWords(text)`）・`readingMinutes`（`Math.max(1, Math.ceil(charsNoSpaces / 500))`、日本語想定で 1 分 500 文字）を返す純粋関数。UI 表示の有無に関わらず常に全項目を計算する。
+
+- **`countWords(text)`**（`src/stats.ts`）: `Intl.Segmenter`（`granularity: 'word'`）が使える環境ではそれを使い、`isWordLike` な segment の数を数える。日本語のようにスペース区切りが無い言語でも意味のある単語単位で分割できる。未対応環境ではスペース区切り（`trim().split(/\s+/)`）にフォールバックする。
 
 - **`buildWidget(stats)`**: `<div class="gpwc-widget">` を `createElement` + `textContent` + `setAttribute` のみで構築（`innerHTML` は使わない）。`role="status"` / `aria-label` を付与。アイコン `<span class="gpwc-icon">📝</span>` の後に `SHOW_*` フラグが true の指標のみ `<span class="gpwc-seg">` として追加する。
 

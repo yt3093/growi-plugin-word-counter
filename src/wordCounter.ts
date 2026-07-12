@@ -66,10 +66,65 @@ const getMainWiki = (): HTMLElement | null => document.querySelector<HTMLElement
 const getExistingWidget = (wiki: HTMLElement): HTMLElement | null =>
   wiki.querySelector<HTMLElement>(`:scope > .${WIDGET_CLASS}`);
 
+// ブロックレベル要素の後には区切り文字を挿入してからテキストを収集する。
+// `textContent` を素朴に使うと `<h2>見出し</h2><p>本文</p>` のような隣接ブロックの
+// 境界に何も挟まらず「見出し本文」と連結されてしまい、単語区切り(words)が壊れるため。
+const BLOCK_TAGS = new Set([
+  'P',
+  'DIV',
+  'LI',
+  'UL',
+  'OL',
+  'BLOCKQUOTE',
+  'PRE',
+  'TABLE',
+  'TR',
+  'TD',
+  'TH',
+  'THEAD',
+  'TBODY',
+  'TFOOT',
+  'H1',
+  'H2',
+  'H3',
+  'H4',
+  'H5',
+  'H6',
+  'HR',
+  'BR',
+  'SECTION',
+  'ARTICLE',
+  'HEADER',
+  'FOOTER',
+  'FIGURE',
+  'FIGCAPTION',
+  'DL',
+  'DT',
+  'DD',
+]);
+
+const extractTextWithBlockBreaks = (root: HTMLElement): string => {
+  const parts: string[] = [];
+
+  const walk = (node: Node): void => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      parts.push(node.textContent ?? '');
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    node.childNodes.forEach(walk);
+    if (BLOCK_TAGS.has((node as HTMLElement).tagName)) parts.push('\n');
+  };
+
+  root.childNodes.forEach(walk);
+  return parts.join('');
+};
+
 /**
  * 本文テキストを取得する。自分自身が注入したウィジェットの文字列と、
  * EXCLUDED_SELECTORS に該当する要素（コードブロックなど）はカウントに
- * 混入しないよう除外する。
+ * 混入しないよう除外する。ブロック要素の境界には区切りを補って収集する。
  */
 const getBodyText = (wiki: HTMLElement): string => {
   const clone = wiki.cloneNode(true) as HTMLElement;
@@ -77,7 +132,7 @@ const getBodyText = (wiki: HTMLElement): string => {
   EXCLUDED_SELECTORS.forEach((selector) => {
     clone.querySelectorAll(selector).forEach((el) => el.remove());
   });
-  return clone.textContent ?? '';
+  return extractTextWithBlockBreaks(clone);
 };
 
 const createSegment = (text: string): HTMLSpanElement => {
