@@ -10,7 +10,7 @@
 
 | 機能 | 説明 |
 |---|---|
-| 文字数表示 | ページ本文（`.wiki`）の先頭に `<div class="gpwc-widget">` を注入し、`📝 N字 / M字(空白除く)`（`toLocaleString()` で桁区切り）を表示。空白除く側は改行 `\n` も除去対象（`\s` にマッチするため） |
+| 文字数・単語数・読了時間表示 | ページ本文（`.wiki`）の先頭に `<div class="gpwc-widget">` を注入し、`📝 N字 / M字(空白除く) / K語 / 約T分`（`toLocaleString()` で桁区切り）を表示。空白除く側は改行 `\n` も除去対象（`\s` にマッチするため） |
 | 統計計算の分離 | `computeStats(text)`（`src/stats.ts`）が文字数（空白含む/除く）・単語数・読了時間の全指標を常に計算。UI 側は `wordCounter.ts` 内の `SHOW_*` 定数フラグで表示項目を選択する |
 | opt-out 属性 | `.wiki` 要素（またはその祖先経由で付与されたクラス）に `data-no-wordcount` があればウィジェット非表示 |
 | 非表示条件 | 管理画面（`/admin`）・編集モード（`/edit`, `#edit`, `body.editing`, `body.grw-editor-mode`, `body.modal-open`）では非表示 |
@@ -26,8 +26,7 @@
 
 ### 未実装（将来フェーズ）
 
-- 単語数・読了時間のセグメント表示（`stats.ts` は計算済み。文字数(空白除く)は表示済み。`wordCounter.ts` の `SHOW_WORDS` / `SHOW_READING_MINUTES` を `true` にして UI 側の表示のみ有効化すればよい）
-- **単語数（`words`）の精度**: `getBodyText` は `wiki.textContent` を使うため、隣接するブロック要素（`<p>` 等）の間に改行・スペースが自動挿入されず、単語が誤って連結される可能性がある。`words` を実際に表示する際は改善を検討する
+- **単語数（`words`）の精度**: `getBodyText` は `wiki.textContent` を使うため、隣接するブロック要素（`<p>` 等）の間に改行・スペースが自動挿入されず、単語が誤って連結される可能性がある（表示は有効化済みだが未修正の既知の問題）
 - 複数 `.wiki` が存在するページ（コメント欄など）でのセレクタ絞り込み精査（要実機確認）
 - 選択範囲のみのカウント（現状は本文全体のみが対象）
 - **MathJax 対応**: 実機で確認できた数式レンダリングは KaTeX（`.katex` クラス）のみで、`.katex` を `EXCLUDED_SELECTORS` に追加済み。GROWI が MathJax レンダリングも使うページがあれば DOM 構造（`.MathJax` / `mjx-container` 等、未確認）を確認の上セレクタを追加する

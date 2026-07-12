@@ -35,8 +35,8 @@ const EXCLUDED_SELECTORS = ['pre', '.drawio-viewer', '.katex'];
 // 将来的に単語数・読了時間を表示する場合はここを true にするだけでよい。
 const SHOW_CHARS_WITH_SPACES = true;
 const SHOW_CHARS_NO_SPACES = true;
-const SHOW_WORDS = false;
-const SHOW_READING_MINUTES = false;
+const SHOW_WORDS = true;
+const SHOW_READING_MINUTES = true;
 
 let observer: MutationObserver | null = null;
 let originalPushState: typeof history.pushState | null = null;
