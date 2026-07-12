@@ -125,7 +125,15 @@ const extractTextWithBlockBreaks = (root: HTMLElement): string => {
   };
 
   root.childNodes.forEach(walk);
-  return parts.join('');
+
+  // GROWI がタグ間に出力する整形用の改行テキストノードと、ここで挿入した区切りの `\n` が
+  // 重なって連続する場合がある（例: `<blockquote>\n<p>a</p>\n</blockquote>`）。
+  // 改行を含む空白の連続はブロック境界1つにつき改行1文字へ正規化し、
+  // 先頭・末尾の余分な空白も trim して取り除く。
+  return parts
+    .join('')
+    .replace(/\s*\n\s*/g, '\n')
+    .trim();
 };
 
 /**
