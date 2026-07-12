@@ -29,7 +29,14 @@ const WIKI_SELECTOR = '.wiki';
 //   - `.katex-html`: 実際に画面表示される層。同じ数字・記号を再度テキストノードとして持つ
 // の2層があり、同じ内容が重複して textContent に含まれるため素朴に数えると二重カウントに
 // なる。`.katex` ごと除外することで二重カウントと TeX ソース混入の両方を解消する。
-const EXCLUDED_SELECTORS = ['pre', '.drawio-viewer', '.katex'];
+//
+// GROWI は見出し（h1-h6）の中に本文とは無関係な UI 要素を挿入する:
+//   - `.revision-head-link`: 見出しへのパーマリンクアンカー。テキストとして `#` を持つ
+//   - `.revision-head-edit-button`: 編集ボタン。中の `.material-symbols-outlined` は
+//     Material Symbols フォントのリガチャ表示用で、DOM 上は `edit_square` 等の英単語が
+//     生テキストとして入っている（見た目はアイコン1つでも textContent には単語が丸ごと入る）
+// 見出しごとに繰り返し出現するため、見出しの多いページほど文字数・単語数が水増しされる。
+const EXCLUDED_SELECTORS = ['pre', '.drawio-viewer', '.katex', '.revision-head-link', '.revision-head-edit-button'];
 
 // UI に表示する指標のフラグ。stats.ts では常に全指標を計算しているため、
 // 将来的に単語数・読了時間を表示する場合はここを true にするだけでよい。
