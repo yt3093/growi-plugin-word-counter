@@ -19,10 +19,6 @@
   user-select: none;
 }
 
-.gpwc-icon {
-  flex-shrink: 0;
-}
-
 .gpwc-seg + .gpwc-seg::before {
   content: '/';
   margin: 0 0.4em;
@@ -32,6 +28,14 @@
 .gpwc-seg {
   display: inline-flex;
   align-items: center;
+  gap: 0.3em;
+}
+
+.gpwc-seg-icon {
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+  opacity: 0.75;
 }
 
 @media (prefers-color-scheme: dark) {

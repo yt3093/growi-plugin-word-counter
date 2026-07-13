@@ -10,7 +10,8 @@
 
 | 機能 | 説明 |
 |---|---|
-| 文字数・単語数・読了時間表示 | ページ本文（`.wiki`）の先頭に `<div class="gpwc-widget">` を注入し、`📝 N字 / M字(空白除く) / K語 / 約T分`（`toLocaleString()` で桁区切り）を表示。空白除く側は改行 `\n` も除去対象（`\s` にマッチするため） |
+| 文字数・単語数・読了時間表示 | ページ本文（`.wiki`）の先頭に `<div class="gpwc-widget">` を注入し、英語表記で `N chars / M chars (no spaces) / K words / ~T min read`（`toLocaleString()` で桁区切り）を表示。空白除く側は改行 `\n` も除去対象（`\s` にマッチするため） |
+| SVG アイコン | 各指標（`.gpwc-seg`）の先頭に絵文字ではなく自己完結の SVG アイコンを配置。`createSvgIcon`（`createElementNS` で `<svg>`/`<line>`/`<rect>`/`<circle>` を直接生成、`innerHTML` 不使用）が `SvgShapeDef[]`（`src/types.ts`）から組み立てる。`stroke="currentColor"` によりダークモード・印刷時の配色に自動追従。文字数=横線3本、文字数(空白除く)=ルーラー、単語数=角丸ブロック3つ、読了時間=時計 |
 | 統計計算の分離 | `computeStats(text)`（`src/stats.ts`）が文字数（空白含む/除く）・単語数・読了時間の全指標を常に計算。UI 側は `wordCounter.ts` 内の `SHOW_*` 定数フラグで表示項目を選択する |
 | opt-out 属性 | `.wiki` 要素（またはその祖先経由で付与されたクラス）に `data-no-wordcount` があればウィジェット非表示 |
 | 非表示条件 | 管理画面（`/admin`）・編集モード（`/edit`, `#edit`, `body.editing`, `body.grw-editor-mode`, `body.modal-open`）では非表示 |
@@ -80,7 +81,11 @@ growi-plugin-word-counter/
 
 - **`countWords(text)`**（`src/stats.ts`）: `Intl.Segmenter`（`granularity: 'word'`）が使える環境ではそれを使い、`isWordLike` な segment の数を数える。日本語のようにスペース区切りが無い言語でも意味のある単語単位で分割できる。未対応環境ではスペース区切り（`trim().split(/\s+/)`）にフォールバックする。
 
-- **`buildWidget(stats)`**: `<div class="gpwc-widget">` を `createElement` + `textContent` + `setAttribute` のみで構築（`innerHTML` は使わない）。`role="status"` / `aria-label` を付与。アイコン `<span class="gpwc-icon">📝</span>` の後に `SHOW_*` フラグが true の指標のみ `<span class="gpwc-seg">` として追加する。
+- **`buildWidget(stats)`**: `<div class="gpwc-widget">` を `createElement` + `textContent` + `setAttribute` のみで構築（`innerHTML` は使わない）。`role="status"` / `aria-label`（英語表記）を付与。`SHOW_*` フラグが true の指標のみ `createSegment(icon, text)` で `<span class="gpwc-seg">` として追加する。
+
+- **`createSegment(icon, text)`**: `<span class="gpwc-seg">` の中に `createSvgIcon(icon)` の SVG と `<span class="gpwc-seg-text">` のラベルテキストを並べる。
+
+- **`createSvgIcon(shapes)`**: `SvgShapeDef[]`（`{ tag, attrs }` の配列）から `document.createElementNS` で `<svg viewBox="0 0 24 24">` と子図形要素（`line`/`rect`/`circle` 等）を直接生成する（`innerHTML` は使わない）。`stroke="currentColor"` によりウィジェットのテキスト色（ダークモード・印刷スタイル含む）に自動追従する。文字数用（`ICON_CHARS`: 横線3本）・文字数(空白除く)用（`ICON_CHARS_NO_SPACE`: ルーラー）・単語数用（`ICON_WORDS`: 角丸ブロック3つ）・読了時間用（`ICON_CLOCK`: 時計）の4種類を定義。
 
 - **`enhanceWiki(wiki)`**: `computeStats(getBodyText(wiki))` → `buildWidget()` を `wiki.prepend()`、`data-gpwc-enhanced="1"` を設定。
 
@@ -106,8 +111,9 @@ growi-plugin-word-counter/
 | CSS 変数 | `--gpwc-*` |
 | opt-out（カウント非表示） | `data-no-wordcount` |
 | ウィジェットクラス | `gpwc-widget` |
-| ウィジェット内アイコンクラス | `gpwc-icon` |
 | ウィジェット内セグメントクラス | `gpwc-seg` |
+| セグメント内 SVG アイコンクラス | `gpwc-seg-icon` |
+| セグメント内ラベルテキストクラス | `gpwc-seg-text` |
 | pluginActivators キー | `growi-plugin-word-counter` |
 
 ## ハマりどころ（必読・GROWI プラグイン共通）
@@ -141,7 +147,7 @@ Edit → View 遷移で `location.hash` のみが変わる場合、`pushState` �
 
 ### 6. ウィジェット自身の文字をカウントに混入させない
 
-`.wiki` 配下に注入した `<div class="gpwc-widget">` は DOM 上 `.wiki` の子であるため、素朴に `wiki.textContent` を取ると自分自身の表示文字列（`📝 1,234字` 等）が次回のカウントに混入し、再計算のたびに数値がずれていく。`getBodyText()` で clone してからウィジェットのみ除去して集計することでこれを防ぐ。
+`.wiki` 配下に注入した `<div class="gpwc-widget">` は DOM 上 `.wiki` の子であるため、素朴に `wiki.textContent` を取ると自分自身の表示文字列（`1,234 chars` 等）が次回のカウントに混入し、再計算のたびに数値がずれていく。`getBodyText()` で clone してからウィジェットのみ除去して集計することでこれを防ぐ。
 
 ### 7. `<code>` 同様、既存 DOM 構造を破壊しない
 
@@ -168,8 +174,9 @@ GROWI 管理画面 `/admin/plugins` で **削除 → 再インストール**。
 
 1. `pnpm build` が成功し `dist/manifest.json` が出力される
 2. GROWI で削除 → 再インストール後、DevTools Network で `client-entry-*.js` が 200 で取得される
-3. 閲覧モードでページを開くと本文先頭に `📝 N字` ウィジェットが表示される
+3. 閲覧モードでページを開くと本文先頭に `N chars / M chars (no spaces) / K words / ~T min read` ウィジェットが表示される
 4. 表示文字数がページ本文の実文字数と一致する（ウィジェット自身の文字は含まない）
+4a. 各指標（chars / chars (no spaces) / words / min read）の先頭に、絵文字ではなく SVG アイコンが表示される（横線3本・ルーラー・角丸ブロック3つ・時計）
 5. `.wiki` に `data-no-wordcount` を付与するとウィジェットが表示されない
 6. `/edit`・`#edit`・編集モードへ遷移するとウィジェットが消える（cleanupAll）
 7. 編集モードから閲覧モードに戻るとウィジェットが再生成される

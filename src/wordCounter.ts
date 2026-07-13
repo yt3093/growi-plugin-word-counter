@@ -1,6 +1,6 @@
 import './styles/wordCounter.css';
 import { computeStats } from './stats';
-import type { PageStats } from './types';
+import type { PageStats, SvgShapeDef } from './types';
 
 const WIDGET_CLASS = 'gpwc-widget';
 const ENHANCED_ATTR = 'data-gpwc-enhanced';
@@ -152,10 +152,66 @@ const getBodyText = (wiki: HTMLElement): string => {
   return extractTextWithBlockBreaks(clone);
 };
 
-const createSegment = (text: string): HTMLSpanElement => {
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// 各指標のアイコンを構成する図形定義。24x24 viewBox の線画（stroke ベース）で統一し、
+// `stroke="currentColor"` を使うことでダークモード・印刷時の配色に自動追従させる。
+// 絵文字やアイコンフォントは使わず、`createElementNS` で自己完結の SVG として生成する。
+
+/** 文字数（空白含む）: 長さの異なる横線3本＝段落・文章量を表す */
+const ICON_CHARS: SvgShapeDef[] = [
+  { tag: 'line', attrs: { x1: '4', y1: '7', x2: '20', y2: '7', 'stroke-width': '2', 'stroke-linecap': 'round' } },
+  { tag: 'line', attrs: { x1: '4', y1: '12', x2: '20', y2: '12', 'stroke-width': '2', 'stroke-linecap': 'round' } },
+  { tag: 'line', attrs: { x1: '4', y1: '17', x2: '14', y2: '17', 'stroke-width': '2', 'stroke-linecap': 'round' } },
+];
+
+/** 文字数（空白除く）: 目盛り付きのルーラー＝余白を除いた実測の長さを表す */
+const ICON_CHARS_NO_SPACE: SvgShapeDef[] = [
+  { tag: 'rect', attrs: { x: '3', y: '9', width: '18', height: '6', rx: '1', 'stroke-width': '2' } },
+  { tag: 'line', attrs: { x1: '7', y1: '9', x2: '7', y2: '12', 'stroke-width': '2' } },
+  { tag: 'line', attrs: { x1: '11', y1: '9', x2: '11', y2: '12', 'stroke-width': '2' } },
+  { tag: 'line', attrs: { x1: '15', y1: '9', x2: '15', y2: '12', 'stroke-width': '2' } },
+];
+
+/** 単語数: 独立した角丸ブロック3つ＝分割された単語トークンを表す */
+const ICON_WORDS: SvgShapeDef[] = [
+  { tag: 'rect', attrs: { x: '2', y: '9', width: '5', height: '6', rx: '1', 'stroke-width': '2' } },
+  { tag: 'rect', attrs: { x: '9.5', y: '9', width: '5', height: '6', rx: '1', 'stroke-width': '2' } },
+  { tag: 'rect', attrs: { x: '17', y: '9', width: '5', height: '6', rx: '1', 'stroke-width': '2' } },
+];
+
+/** 読了時間: 時計 */
+const ICON_CLOCK: SvgShapeDef[] = [
+  { tag: 'circle', attrs: { cx: '12', cy: '12', r: '9', 'stroke-width': '2' } },
+  { tag: 'line', attrs: { x1: '12', y1: '12', x2: '12', y2: '7', 'stroke-width': '2', 'stroke-linecap': 'round' } },
+  { tag: 'line', attrs: { x1: '12', y1: '12', x2: '16', y2: '14', 'stroke-width': '2', 'stroke-linecap': 'round' } },
+];
+
+const createSvgIcon = (shapes: SvgShapeDef[]): SVGSVGElement => {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'gpwc-seg-icon');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('aria-hidden', 'true');
+  shapes.forEach(({ tag, attrs }) => {
+    const el = document.createElementNS(SVG_NS, tag);
+    Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+    svg.appendChild(el);
+  });
+  return svg;
+};
+
+const createSegment = (icon: SvgShapeDef[], text: string): HTMLSpanElement => {
   const seg = document.createElement('span');
   seg.className = 'gpwc-seg';
-  seg.textContent = text;
+  seg.appendChild(createSvgIcon(icon));
+
+  const label = document.createElement('span');
+  label.className = 'gpwc-seg-text';
+  label.textContent = text;
+  seg.appendChild(label);
+
   return seg;
 };
 
@@ -163,25 +219,19 @@ const buildWidget = (stats: PageStats): HTMLDivElement => {
   const widget = document.createElement('div');
   widget.className = WIDGET_CLASS;
   widget.setAttribute('role', 'status');
-  widget.setAttribute('aria-label', `文字数 ${stats.charsWithSpaces.toLocaleString()}字`);
-
-  const icon = document.createElement('span');
-  icon.className = 'gpwc-icon';
-  icon.textContent = '📝';
-  icon.setAttribute('aria-hidden', 'true');
-  widget.appendChild(icon);
+  widget.setAttribute('aria-label', `${stats.charsWithSpaces.toLocaleString()} characters`);
 
   if (SHOW_CHARS_WITH_SPACES) {
-    widget.appendChild(createSegment(`${stats.charsWithSpaces.toLocaleString()}字`));
+    widget.appendChild(createSegment(ICON_CHARS, `${stats.charsWithSpaces.toLocaleString()} chars`));
   }
   if (SHOW_CHARS_NO_SPACES) {
-    widget.appendChild(createSegment(`${stats.charsNoSpaces.toLocaleString()}字(空白除く)`));
+    widget.appendChild(createSegment(ICON_CHARS_NO_SPACE, `${stats.charsNoSpaces.toLocaleString()} chars (no spaces)`));
   }
   if (SHOW_WORDS) {
-    widget.appendChild(createSegment(`${stats.words.toLocaleString()}語`));
+    widget.appendChild(createSegment(ICON_WORDS, `${stats.words.toLocaleString()} words`));
   }
   if (SHOW_READING_MINUTES) {
-    widget.appendChild(createSegment(`約${stats.readingMinutes}分`));
+    widget.appendChild(createSegment(ICON_CLOCK, `~${stats.readingMinutes} min read`));
   }
 
   return widget;
