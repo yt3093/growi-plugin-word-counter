@@ -1,0 +1,55 @@
+.gpwc-widget {
+  --gpwc-bg: rgba(0, 0, 0, 0.04);
+  --gpwc-fg: rgba(0, 0, 0, 0.65);
+  --gpwc-border: rgba(0, 0, 0, 0.08);
+
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 1rem;
+  padding: 0.4em 0.75em;
+  border: 1px solid var(--gpwc-border);
+  border-radius: 6px;
+  background: var(--gpwc-bg);
+  color: var(--gpwc-fg);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  user-select: none;
+}
+
+.gpwc-icon {
+  flex-shrink: 0;
+}
+
+.gpwc-seg + .gpwc-seg::before {
+  content: '/';
+  margin: 0 0.4em;
+  opacity: 0.5;
+}
+
+.gpwc-seg {
+  display: inline-flex;
+  align-items: center;
+}
+
+@media (prefers-color-scheme: dark) {
+  .gpwc-widget {
+    --gpwc-bg: rgba(255, 255, 255, 0.06);
+    --gpwc-fg: rgba(255, 255, 255, 0.75);
+    --gpwc-border: rgba(255, 255, 255, 0.12);
+  }
+}
+
+html[data-bs-theme='dark'] .gpwc-widget {
+  --gpwc-bg: rgba(255, 255, 255, 0.06);
+  --gpwc-fg: rgba(255, 255, 255, 0.75);
+  --gpwc-border: rgba(255, 255, 255, 0.12);
+}
+
+@media print {
+  .gpwc-widget {
+    display: none;
+  }
+}
