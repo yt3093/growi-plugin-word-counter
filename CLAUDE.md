@@ -24,7 +24,8 @@
 | コードブロック除外 | ` ``` ` で囲んだコードブロック（`<pre>` 要素、内部の `<code>` ごと）はカウント対象から除外。インラインコード（`` `code` ``）は除外しない。`EXCLUDED_SELECTORS` 配列で管理し、drawio・数式など追加除外対象を実機確認後に追加できる構造にしている |
 | drawio 除外 | `<div class="drawio-viewer">` 配下（図面 XML は `data-mxgraph` 属性値のため元々 `textContent` には含まれないが、SVG 内 `<foreignObject>` の図形ラベルは実テキストノードとしてカウントに混入するため）はカウント対象から除外。CSS Modules 由来のハッシュ付きクラス（`_drawio-viewer_xxxxx_N`）はバージョン間で変わるため使わず、素の `drawio-viewer` クラスで判定 |
 | KaTeX 数式除外 | `<span class="katex">`（インライン）/ `<span class="katex-display"><span class="katex">`（ブロック）をカウント対象から除外。`.katex` 配下は `.katex-mathml`（隠し MathML 層。`<annotation>` に生 TeX ソースを保持）と `.katex-html`（実表示層）の2層構造で、素朴に textContent を取ると同じ数字・記号が二重にカウントされるため、`.katex` ごと除外して二重カウントと TeX ソース混入を同時に解消している |
-| 見出し UI 要素除外 | GROWI は見出し（h1-h6）の中に `<a class="revision-head-link">#</a>`（パーマリンクアンカー、テキストとして `#` を持つ）と `<span class="revision-head-edit-button">`（編集ボタン。内部の `.material-symbols-outlined` は Material Symbols フォントのリガチャ表示用で `edit_square` 等の英単語がテキストとして入る）を挿入する。見出しごとに繰り返し出現し本文と無関係な文字が水増しされるため、両クラスとも `EXCLUDED_SELECTORS` で除外している |
+| 見出しパーマリンク除外 | GROWI は見出し（h1-h6）の中に `<a class="revision-head-link">#</a>`（パーマリンクアンカー、テキストとして `#` を持つ）を挿入する。見出しごとに繰り返し出現するため `EXCLUDED_SELECTORS` で除外している |
+| アイコンフォント除外 | `.material-symbols-outlined` は Material Symbols フォントのリガチャ表示用クラスで、見た目はアイコン1つでも DOM 上は `edit_square` 等の英単語が生テキストとして入っている。見出しの編集ボタン・表（Handsontable）の編集ボタンなど GROWI の各種編集 UI で繰り返し使われるため、個別のボタンクラスではなくこのアイコンフォントクラス自体を `EXCLUDED_SELECTORS` で一括除外している |
 | deactivate | 全 listener 解除・MutationObserver.disconnect・モンキーパッチ復元・`.gpwc-widget` 削除・`data-gpwc-enhanced` 属性削除。本文 DOM は完全無変更で復元 |
 | ダークモード | `@media (prefers-color-scheme: dark)` と `html[data-bs-theme="dark"]`（Bootstrap 5.3 GROWI UI トグル）の双方で CSS 変数を上書き |
 | 印刷最適化 | `@media print` でウィジェット非表示 |
@@ -71,7 +72,7 @@ growi-plugin-word-counter/
 
 - **`getMainWiki()`**: `document.querySelector('.wiki')` で本文要素を取得。**現状は先頭 1 件のみを対象**にしており、コメント欄等で複数 `.wiki` がヒットするケースは未検証（要実機確認）。
 
-- **`getBodyText(wiki)`**: `wiki.cloneNode(true)` した clone から、自身のウィジェット（`:scope > .gpwc-widget`）と `EXCLUDED_SELECTORS`（`pre` / `.drawio-viewer` / `.katex` / `.revision-head-link` / `.revision-head-edit-button`）に該当する要素を `remove()` してから `extractTextWithBlockBreaks(clone)` でテキストを収集する（元の DOM には触れない）。
+- **`getBodyText(wiki)`**: `wiki.cloneNode(true)` した clone から、自身のウィジェット（`:scope > .gpwc-widget`）と `EXCLUDED_SELECTORS`（`pre` / `.drawio-viewer` / `.katex` / `.revision-head-link` / `.material-symbols-outlined`）に該当する要素を `remove()` してから `extractTextWithBlockBreaks(clone)` でテキストを収集する（元の DOM には触れない）。
 
 - **`extractTextWithBlockBreaks(root)`**: `root.childNodes` を再帰的に walk し、テキストノードは `textContent` をそのまま集める。要素ノードは子を先に walk してから、`BLOCK_TAGS`（`p`/`div`/`li`/`h1`-`h6`/`table` 系/`br` 等）に該当するタグであれば末尾に `'\n'` を追加する。これにより `<h2>見出し</h2><p>本文</p>` のような隣接ブロック要素の境界にも区切りが入り、単純な `textContent` 結合で単語が誤って連結される問題を防ぐ。最後に `.replace(/\s*\n\s*/g, '\n').trim()` で、改行を含む空白の連続をブロック境界1つにつき改行1文字へ正規化し、先頭・末尾の余分な空白も除去する（GROWI 自身がタグ間に出力する整形用の改行と、ここで挿入した区切りの `\n` が重なって二重カウントされるのを防ぐため）。
 
@@ -146,9 +147,11 @@ Edit → View 遷移で `location.hash` のみが変わる場合、`pushState` �
 
 本プラグインは `.wiki` 要素に `prepend()` でウィジェットを追加するのみで、本文の子要素構造自体は変更しない。`unmount()` 時にウィジェットと `data-gpwc-enhanced` を除去すれば元の DOM に完全復元される。
 
-### 8. 見出しの中に本文と無関係な GROWI UI 要素が混入する
+### 8. 見出し・表など GROWI の編集 UI が本文と無関係なテキストを混入させる
 
-GROWI は見出し（h1-h6）タグの**内部**（子要素として）にパーマリンクアンカー（`.revision-head-link`、テキストは `#`）や編集ボタン（`.revision-head-edit-button`、内部の `.material-symbols-outlined` はアイコンフォントのリガチャ用で `edit_square` のような英単語がそのまま生テキストとして入っている）を挿入する。見出しの `textContent` を素朴に取ると、これらの UI 要素の文字列が本文と地続きで混入する。実機の DOM で確認できたことなので、同種の「アイコンフォントのリガチャテキスト」パターンが他の GROWI UI 要素にもないか、実装追加時は注意すること。
+GROWI は見出し（h1-h6）タグの**内部**（子要素として）にパーマリンクアンカー（`.revision-head-link`、テキストは `#`）を挿入する。また見出しの編集ボタン（`.revision-head-edit-button`）や表（Handsontable）の編集ボタン（`.handsontable-modal-trigger`）など、複数の異なる UI 要素で共通して `.material-symbols-outlined`（Material Symbols フォントのリガチャ表示用クラス）が使われており、見た目はアイコン1つでも DOM 上は `edit_square` のような英単語がそのまま生テキストとして入っている。個別のボタンクラスを都度追いかけるより、**アイコンフォントのクラス自体を一括除外**する方が、今後 GROWI が同じパターンで追加する他の編集ボタンにも効く。ただし表本体を巻き込まないよう、除外対象は**アイコン span 自体**に限定し、テーブルなど周囲のラッパー要素ごと除外しないこと（実データが消えてしまう）。
+
+同種の「アイコンフォントのリガチャテキスト」パターンが GROWI の他の UI 要素にもないか、実装追加時は注意すること。
 
 ## デプロイ手順
 

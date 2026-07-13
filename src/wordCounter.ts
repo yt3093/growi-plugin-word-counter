@@ -30,13 +30,15 @@ const WIKI_SELECTOR = '.wiki';
 // の2層があり、同じ内容が重複して textContent に含まれるため素朴に数えると二重カウントに
 // なる。`.katex` ごと除外することで二重カウントと TeX ソース混入の両方を解消する。
 //
-// GROWI は見出し（h1-h6）の中に本文とは無関係な UI 要素を挿入する:
-//   - `.revision-head-link`: 見出しへのパーマリンクアンカー。テキストとして `#` を持つ
-//   - `.revision-head-edit-button`: 編集ボタン。中の `.material-symbols-outlined` は
-//     Material Symbols フォントのリガチャ表示用で、DOM 上は `edit_square` 等の英単語が
-//     生テキストとして入っている（見た目はアイコン1つでも textContent には単語が丸ごと入る）
-// 見出しごとに繰り返し出現するため、見出しの多いページほど文字数・単語数が水増しされる。
-const EXCLUDED_SELECTORS = ['pre', '.drawio-viewer', '.katex', '.revision-head-link', '.revision-head-edit-button'];
+// GROWI は見出し（h1-h6）の中にパーマリンクアンカーを挿入する:
+//   - `.revision-head-link`: テキストとして `#` を持つ
+//
+// `.material-symbols-outlined`: Material Symbols フォントのリガチャ表示用クラス。
+// 見た目はアイコン1つでも DOM 上は `edit_square` 等の英単語が生テキストとして入っている。
+// 見出しの編集ボタン（`.revision-head-edit-button` 配下）・表の編集ボタン
+// （`.handsontable-modal-trigger` 配下）など、GROWI の各種編集ボタンで繰り返し使われるため、
+// 個別のボタンクラスを追いかけるのではなくアイコンフォント自体を一括除外する。
+const EXCLUDED_SELECTORS = ['pre', '.drawio-viewer', '.katex', '.revision-head-link', '.material-symbols-outlined'];
 
 // UI に表示する指標のフラグ。stats.ts では常に全指標を計算しているため、
 // 将来的に単語数・読了時間を表示する場合はここを true にするだけでよい。
