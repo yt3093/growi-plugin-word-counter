@@ -158,26 +158,46 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 // `stroke="currentColor"` を使うことでダークモード・印刷時の配色に自動追従させる。
 // 絵文字やアイコンフォントは使わず、`createElementNS` で自己完結の SVG として生成する。
 
-/** 文字数（空白含む）: 長さの異なる横線3本＝段落・文章量を表す */
+// 初期案（横線3本 / 目盛り付きルーラー / 角丸ブロック3つ）は細い線を複数組み合わせた
+// 抽象的な図形で、実表示サイズ（1em 前後）では潰れて視認性が低かったため、
+// 単一の大きなモチーフで一目で判別できるデザインに変更した。
+
+/** 文字数（空白含む）: 太字の「A」1文字＝文字を扱う指標であることを直接示す */
 const ICON_CHARS: SvgShapeDef[] = [
-  { tag: 'line', attrs: { x1: '4', y1: '7', x2: '20', y2: '7', 'stroke-width': '2', 'stroke-linecap': 'round' } },
-  { tag: 'line', attrs: { x1: '4', y1: '12', x2: '20', y2: '12', 'stroke-width': '2', 'stroke-linecap': 'round' } },
-  { tag: 'line', attrs: { x1: '4', y1: '17', x2: '14', y2: '17', 'stroke-width': '2', 'stroke-linecap': 'round' } },
+  {
+    tag: 'text',
+    attrs: {
+      x: '12',
+      y: '13',
+      'text-anchor': 'middle',
+      'dominant-baseline': 'central',
+      'font-size': '18',
+      'font-weight': '700',
+      fill: 'currentColor',
+      stroke: 'none',
+    },
+    text: 'A',
+  },
 ];
 
-/** 文字数（空白除く）: 目盛り付きのルーラー＝余白を除いた実測の長さを表す */
+/** 文字数（空白除く）: 内向きの矢印2本＝余白を詰める（圧縮する）イメージ */
 const ICON_CHARS_NO_SPACE: SvgShapeDef[] = [
-  { tag: 'rect', attrs: { x: '3', y: '9', width: '18', height: '6', rx: '1', 'stroke-width': '2' } },
-  { tag: 'line', attrs: { x1: '7', y1: '9', x2: '7', y2: '12', 'stroke-width': '2' } },
-  { tag: 'line', attrs: { x1: '11', y1: '9', x2: '11', y2: '12', 'stroke-width': '2' } },
-  { tag: 'line', attrs: { x1: '15', y1: '9', x2: '15', y2: '12', 'stroke-width': '2' } },
+  { tag: 'line', attrs: { x1: '2', y1: '12', x2: '9', y2: '12', 'stroke-width': '2', 'stroke-linecap': 'round' } },
+  {
+    tag: 'polyline',
+    attrs: { points: '6,8 9,12 6,16', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+  },
+  { tag: 'line', attrs: { x1: '22', y1: '12', x2: '15', y2: '12', 'stroke-width': '2', 'stroke-linecap': 'round' } },
+  {
+    tag: 'polyline',
+    attrs: { points: '18,8 15,12 18,16', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+  },
 ];
 
-/** 単語数: 独立した角丸ブロック3つ＝分割された単語トークンを表す */
+/** 単語数: 吹き出し（スピーチバブル）＝発話・言葉を表す */
 const ICON_WORDS: SvgShapeDef[] = [
-  { tag: 'rect', attrs: { x: '2', y: '9', width: '5', height: '6', rx: '1', 'stroke-width': '2' } },
-  { tag: 'rect', attrs: { x: '9.5', y: '9', width: '5', height: '6', rx: '1', 'stroke-width': '2' } },
-  { tag: 'rect', attrs: { x: '17', y: '9', width: '5', height: '6', rx: '1', 'stroke-width': '2' } },
+  { tag: 'rect', attrs: { x: '3', y: '4', width: '18', height: '12', rx: '3', 'stroke-width': '2' } },
+  { tag: 'path', attrs: { d: 'M8 16 L7 20 L12 16 Z', 'stroke-width': '2', 'stroke-linejoin': 'round' } },
 ];
 
 /** 読了時間: 時計 */
@@ -194,9 +214,10 @@ const createSvgIcon = (shapes: SvgShapeDef[]): SVGSVGElement => {
   svg.setAttribute('fill', 'none');
   svg.setAttribute('stroke', 'currentColor');
   svg.setAttribute('aria-hidden', 'true');
-  shapes.forEach(({ tag, attrs }) => {
+  shapes.forEach(({ tag, attrs, text }) => {
     const el = document.createElementNS(SVG_NS, tag);
     Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+    if (text !== undefined) el.textContent = text;
     svg.appendChild(el);
   });
   return svg;

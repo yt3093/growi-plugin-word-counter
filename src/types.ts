@@ -20,10 +20,12 @@ export interface PageStats {
   readingMinutes: number;
 }
 
-/** SVG アイコンを構成する1つの図形要素（line / rect / circle 等） */
+/** SVG アイコンを構成する1つの図形要素（line / rect / circle / text 等） */
 export interface SvgShapeDef {
   tag: string;
   attrs: Record<string, string>;
+  /** `<text>` 等、テキストコンテンツを持つ要素にのみ指定する */
+  text?: string;
 }
 
 export {};

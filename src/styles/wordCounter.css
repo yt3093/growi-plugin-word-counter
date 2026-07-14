@@ -33,9 +33,9 @@
 
 .gpwc-seg-icon {
   flex-shrink: 0;
-  width: 1em;
-  height: 1em;
-  opacity: 0.75;
+  width: 1.3em;
+  height: 1.3em;
+  opacity: 0.85;
 }
 
 @media (prefers-color-scheme: dark) {
