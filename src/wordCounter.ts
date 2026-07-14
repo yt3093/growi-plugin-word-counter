@@ -173,7 +173,7 @@ const ICON_CHARS: SvgShapeDef[] = [
       'dominant-baseline': 'central',
       'font-size': '18',
       'font-weight': '700',
-      fill: 'currentColor',
+      fill: 'white',
       stroke: 'none',
     },
     text: 'A',
@@ -207,19 +207,34 @@ const ICON_CLOCK: SvgShapeDef[] = [
   { tag: 'line', attrs: { x1: '12', y1: '12', x2: '16', y2: '14', 'stroke-width': '2', 'stroke-linecap': 'round' } },
 ];
 
+// アイコンは「currentColor の円バッジ + 白抜きの図形」で構成する。
+// 図形自体は元々アイコン全体（24x24）を使う想定で座標を組んでいるため、円バッジ内に
+// 収まるよう `scale(0.7)` で中心基準に縮小してから重ねる。
 const createSvgIcon = (shapes: SvgShapeDef[]): SVGSVGElement => {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('class', 'gpwc-seg-icon');
   svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
   svg.setAttribute('aria-hidden', 'true');
+
+  const badge = document.createElementNS(SVG_NS, 'circle');
+  badge.setAttribute('class', 'gpwc-seg-icon-bg');
+  badge.setAttribute('cx', '12');
+  badge.setAttribute('cy', '12');
+  badge.setAttribute('r', '11');
+  svg.appendChild(badge);
+
+  const group = document.createElementNS(SVG_NS, 'g');
+  group.setAttribute('transform', 'translate(12,12) scale(0.7) translate(-12,-12)');
+  group.setAttribute('fill', 'none');
+  group.setAttribute('stroke', 'white');
   shapes.forEach(({ tag, attrs, text }) => {
     const el = document.createElementNS(SVG_NS, tag);
     Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
     if (text !== undefined) el.textContent = text;
-    svg.appendChild(el);
+    group.appendChild(el);
   });
+  svg.appendChild(group);
+
   return svg;
 };
 
