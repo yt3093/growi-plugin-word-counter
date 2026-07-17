@@ -167,10 +167,12 @@ const ICON_CHARS: SvgShapeDef[] = [
   {
     tag: 'text',
     attrs: {
+      // dominant-baseline のキーワード（central / middle）はブラウザ・フォント依存で
+      // 上下にブレやすいため使わず、標準の alphabetic ベースラインのまま
+      // y をキャップハイト分（font-size の約 0.72 の半分）だけ中心から下げて中央に合わせる。
       x: '12',
-      y: '12',
+      y: '18.5',
       'text-anchor': 'middle',
-      'dominant-baseline': 'middle',
       'font-size': '18',
       'font-weight': '700',
       fill: 'white',
