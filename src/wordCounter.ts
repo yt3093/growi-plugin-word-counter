@@ -168,9 +168,9 @@ const ICON_CHARS: SvgShapeDef[] = [
     tag: 'text',
     attrs: {
       x: '12',
-      y: '13',
+      y: '12',
       'text-anchor': 'middle',
-      'dominant-baseline': 'central',
+      'dominant-baseline': 'middle',
       'font-size': '18',
       'font-weight': '700',
       fill: 'white',
