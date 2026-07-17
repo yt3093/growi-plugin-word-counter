@@ -4,13 +4,14 @@
 
 - **名前**: `growi-plugin-word-counter`
 - **種別**: GROWI Script プラグイン
-- **目的**: GROWI ページ本文（閲覧モード）の先頭に文字数・単語数・読了時間などの統計情報をバー状のウィジェットで表示する
+- **目的**: GROWI ページ本文（閲覧モード）の先頭に文字数・単語数・読了時間などの統計情報を、背景・枠線のないミニマルなウィジェットで表示する
 
 ### 実装済み機能（フェーズ1）
 
 | 機能 | 説明 |
 |---|---|
 | 文字数・単語数・読了時間表示 | ページ本文（`.wiki`）の先頭に `<div class="gpwc-widget">` を注入し、英語表記で `N chars / M chars (no spaces) / K words / ~T min read`（`toLocaleString()` で桁区切り）を表示。空白除く側は改行 `\n` も除去対象（`\s` にマッチするため） |
+| ミニマルなウィジェット外観 | 背景色・枠線・角丸ボックスは持たず、下端に薄い罫線（`border-bottom`、`--gpwc-divider`）のみで本文と区切る。セグメント間の「/」区切り文字も廃止し、`gap` によるスペースのみで区切る（本文に自然に馴染むデザイン方針。ピル/カード等の主張が強いデザイン案は不採用） |
 | SVG アイコン | 各指標（`.gpwc-seg`）の先頭に絵文字ではなく自己完結の SVG アイコンを配置。`currentColor` の円バッジ（`.gpwc-seg-icon-bg`、色は `--gpwc-icon-bg` で管理しテーマに関わらず固定）の上に、白抜きの図形（`stroke="white"` / `fill="white"`）を重ねるデザイン。`createSvgIcon`（`createElementNS` で `<svg>`/`<circle>`/`<g>`/`<text>`/`<line>`/`<rect>`/`<polyline>`/`<path>` を直接生成、`innerHTML` 不使用）が `SvgShapeDef[]`（`src/types.ts`）から組み立てる。文字数=太字の「A」、文字数(空白除く)=内向き矢印（圧縮）、単語数=吹き出し、読了時間=時計。単一の大きなモチーフで小サイズ表示でも判別しやすいデザインを採用（初期案の細線を複数組み合わせた抽象図形は視認性が低く不採用） |
 | 統計計算の分離 | `computeStats(text)`（`src/stats.ts`）が文字数（空白含む/除く）・単語数・読了時間の全指標を常に計算。UI 側は `wordCounter.ts` 内の `SHOW_*` 定数フラグで表示項目を選択する |
 | opt-out 属性 | `.wiki` 要素（またはその祖先経由で付与されたクラス）に `data-no-wordcount` があればウィジェット非表示 |

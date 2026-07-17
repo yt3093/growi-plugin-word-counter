@@ -1,31 +1,23 @@
 .gpwc-widget {
-  --gpwc-bg: rgba(0, 0, 0, 0.04);
-  --gpwc-fg: rgba(0, 0, 0, 0.65);
-  --gpwc-border: rgba(0, 0, 0, 0.08);
+  --gpwc-fg: rgba(0, 0, 0, 0.6);
+  --gpwc-divider: rgba(0, 0, 0, 0.1);
   /* アイコンバッジの背景色。白抜きアイコンとのコントラストを保つため、
      ライト/ダークいずれのテーマでも切り替えない固定値にする。 */
   --gpwc-icon-bg: rgba(71, 85, 105, 0.9);
 
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.4em;
+  gap: 0.4em 1.1em;
   box-sizing: border-box;
   width: 100%;
-  margin-bottom: 1rem;
-  padding: 0.4em 0.75em;
-  border: 1px solid var(--gpwc-border);
-  border-radius: 6px;
-  background: var(--gpwc-bg);
+  margin-bottom: 1.1rem;
+  padding-bottom: 0.6em;
+  border-bottom: 1px solid var(--gpwc-divider);
   color: var(--gpwc-fg);
   font-size: 0.85rem;
   line-height: 1.4;
   user-select: none;
-}
-
-.gpwc-seg + .gpwc-seg::before {
-  content: '/';
-  margin: 0 0.4em;
-  opacity: 0.5;
 }
 
 .gpwc-seg {
@@ -47,16 +39,14 @@
 
 @media (prefers-color-scheme: dark) {
   .gpwc-widget {
-    --gpwc-bg: rgba(255, 255, 255, 0.06);
-    --gpwc-fg: rgba(255, 255, 255, 0.75);
-    --gpwc-border: rgba(255, 255, 255, 0.12);
+    --gpwc-fg: rgba(255, 255, 255, 0.7);
+    --gpwc-divider: rgba(255, 255, 255, 0.14);
   }
 }
 
 html[data-bs-theme='dark'] .gpwc-widget {
-  --gpwc-bg: rgba(255, 255, 255, 0.06);
-  --gpwc-fg: rgba(255, 255, 255, 0.75);
-  --gpwc-border: rgba(255, 255, 255, 0.12);
+  --gpwc-fg: rgba(255, 255, 255, 0.7);
+  --gpwc-divider: rgba(255, 255, 255, 0.14);
 }
 
 @media print {
