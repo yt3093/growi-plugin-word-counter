@@ -45,7 +45,6 @@
 - **mermaid 図は追加対応不要**: `pre` 除外がそのまま効くため、drawio と同じ「図表は除外」方針を自動的に満たす（上記の機能表を参照）
 - **PlantUML 図は追加対応不要**: `<img>` として画像化されるため textContent が空になる（上記の機能表を参照）
 - **添付ファイルのプレビューは追加対応不要**: `<p><button aria-label="image.png"><img alt="image.png" src="/attachment/..."></button></p>` という構造で、ファイル名は `aria-label` / `alt` 属性としてのみ存在し実テキストノードが無い。`<img>` 自体も void 要素で textContent が空。属性はそもそも `textContent` に含まれないため（drawio の `data-mxgraph` と同様の理由）、追加のセレクタなしで安全（実機 DOM で確認済み、`wordCounter.test.ts` にテストケースあり）
-- **PlantUML 図は追加対応不要**: `<div data-growi-is-content-rendering="false"><img src="https://www.plantuml.com/plantuml/svg/...">` という構造で、外部の PlantUML サーバーが生成した SVG 画像を `<img>` として埋め込んでいる（`<pre>` には包まれない）。`<img>` は子ノードを持たない void 要素で `textContent` が常に空文字列になるため、図中のラベルテキストはそもそも DOM 上に存在せず、追加のセレクタ無しで安全
 - **複数 `.wiki` 問題は対応済み**: コメント本文も `<div class="page-comment-body"><div class="wiki comment">...` という構造で `.wiki` クラスを持つ（実機確認済み）ため、ページにコメントが付くと `.wiki` が複数ヒットする。`WIKI_SELECTOR` を `.wiki:not(.comment)` にすることで、DOM 順（本文とコメントの前後関係）に依存せず確実に本文側だけを選ぶようにした。`wordCounter.test.ts` に DOM 順を入れ替えたケースを含む回帰テストあり
 
 ## アーキテクチャ
@@ -228,6 +227,10 @@ GROWI 管理画面 `/admin/plugins` で **削除 → 再インストール**。
 12. プラグイン無効化（`unmount`）で全ページから `.gpwc-widget` と `data-gpwc-enhanced` が完全に消え、本文 DOM が元通りになる
 13. 本文が空・非常に短い・非常に長いページでも数値が正しく計算される（0 文字、桁区切り表示含む）
 14. 絵文字などサロゲートペアを含む本文でも文字数が直感的な値になる（`Array.from` によるカウント）
+15. コメントが付いているページでもウィジェットが正しく本文側に表示される（コメント本文の文字数を誤って拾わない）
+16. 脚注（footnote）があるページで、参照マーカーの数字・脚注一覧末尾の「↩」がカウントに含まれず、脚注の内容テキストはカウントに含まれる
+17. mermaid・PlantUML 図・drawio 図があるページで、図中のラベルテキストがカウントに混入しない
+18. 添付ファイル（画像等）のプレビューがあるページで、ファイル名がカウントに混入しない
 
 ## 会話ガイドライン
 
