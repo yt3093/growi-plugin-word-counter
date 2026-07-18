@@ -4,13 +4,15 @@
 
 - **名前**: `growi-plugin-word-counter`
 - **種別**: GROWI Script プラグイン
-- **目的**: GROWI ページ本文（閲覧モード）の先頭に文字数・単語数・読了時間などの統計情報をバー状のウィジェットで表示する
+- **目的**: GROWI ページ本文（閲覧モード）の先頭に文字数・単語数・読了時間などの統計情報を、背景・枠線のないミニマルなウィジェットで表示する
 
 ### 実装済み機能（フェーズ1）
 
 | 機能 | 説明 |
 |---|---|
-| 文字数・単語数・読了時間表示 | ページ本文（`.wiki`）の先頭に `<div class="gpwc-widget">` を注入し、`📝 N字 / M字(空白除く) / K語 / 約T分`（`toLocaleString()` で桁区切り）を表示。空白除く側は改行 `\n` も除去対象（`\s` にマッチするため） |
+| 文字数・単語数・読了時間表示 | ページ本文（`.wiki`）の先頭に `<div class="gpwc-widget">` を注入し、英語表記で `N chars / M chars (no spaces) / K words / ~T min read`（`toLocaleString()` で桁区切り）を表示。空白除く側は改行 `\n` も除去対象（`\s` にマッチするため） |
+| ミニマルなウィジェット外観 | 背景色・枠線・角丸ボックスは持たず、下端に薄い罫線（`border-bottom`、`--gpwc-divider`）のみで本文と区切る。セグメント間の「/」区切り文字も廃止し、`gap` によるスペースのみで区切る（本文に自然に馴染むデザイン方針。ピル/カード等の主張が強いデザイン案は不採用） |
+| SVG アイコン | 各指標（`.gpwc-seg`）の先頭に絵文字ではなく自己完結の SVG アイコンを配置。`currentColor` の円バッジ（`.gpwc-seg-icon-bg`、色は `--gpwc-icon-bg` で管理しテーマに関わらず固定）の上に、白抜きの図形（`stroke="white"` / `fill="white"`）を重ねるデザイン。`createSvgIcon`（`createElementNS` で `<svg>`/`<circle>`/`<g>`/`<text>`/`<line>`/`<rect>`/`<polyline>`/`<path>` を直接生成、`innerHTML` 不使用）が `SvgShapeDef[]`（`src/types.ts`）から組み立てる。文字数=太字の「A」、文字数(空白除く)=内向き矢印（圧縮）、単語数=吹き出し、読了時間=時計。単一の大きなモチーフで小サイズ表示でも判別しやすいデザインを採用（初期案の細線を複数組み合わせた抽象図形は視認性が低く不採用） |
 | 統計計算の分離 | `computeStats(text)`（`src/stats.ts`）が文字数（空白含む/除く）・単語数・読了時間の全指標を常に計算。UI 側は `wordCounter.ts` 内の `SHOW_*` 定数フラグで表示項目を選択する |
 | opt-out 属性 | `.wiki` 要素（またはその祖先経由で付与されたクラス）に `data-no-wordcount` があればウィジェット非表示 |
 | 非表示条件 | 管理画面（`/admin`）・編集モード（`/edit`, `#edit`, `body.editing`, `body.grw-editor-mode`, `body.modal-open`）では非表示 |
@@ -80,7 +82,11 @@ growi-plugin-word-counter/
 
 - **`countWords(text)`**（`src/stats.ts`）: `Intl.Segmenter`（`granularity: 'word'`）が使える環境ではそれを使い、`isWordLike` な segment の数を数える。日本語のようにスペース区切りが無い言語でも意味のある単語単位で分割できる。未対応環境ではスペース区切り（`trim().split(/\s+/)`）にフォールバックする。
 
-- **`buildWidget(stats)`**: `<div class="gpwc-widget">` を `createElement` + `textContent` + `setAttribute` のみで構築（`innerHTML` は使わない）。`role="status"` / `aria-label` を付与。アイコン `<span class="gpwc-icon">📝</span>` の後に `SHOW_*` フラグが true の指標のみ `<span class="gpwc-seg">` として追加する。
+- **`buildWidget(stats)`**: `<div class="gpwc-widget">` を `createElement` + `textContent` + `setAttribute` のみで構築（`innerHTML` は使わない）。`role="status"` / `aria-label`（英語表記）を付与。`SHOW_*` フラグが true の指標のみ `createSegment(icon, text)` で `<span class="gpwc-seg">` として追加する。
+
+- **`createSegment(icon, text)`**: `<span class="gpwc-seg">` の中に `createSvgIcon(icon)` の SVG と `<span class="gpwc-seg-text">` のラベルテキストを並べる。
+
+- **`createSvgIcon(shapes)`**: `<svg viewBox="0 0 24 24">` の中に、まず `<circle class="gpwc-seg-icon-bg" r="11">`（円バッジ、塗りは CSS の `--gpwc-icon-bg` で管理）を配置し、続けて `<g transform="translate(12,12) scale(0.7) translate(-12,-12)" fill="none" stroke="white">` でアイコン本体を中心基準に縮小して重ねる（元の座標は 24x24 いっぱいを使う想定のため、円バッジ内に収まるよう縮小している）。`g` の子要素は `SvgShapeDef[]`（`{ tag, attrs, text? }` の配列）から `document.createElementNS` で直接生成する（`innerHTML` は使わない）。`text` が指定された要素（`<text>`）には `el.textContent = text` を設定する（アイコン定義は自前のハードコード文字列のみで外部/ユーザー入力を扱わないため安全）。文字数用（`ICON_CHARS`: `<text>` で太字の「A」1文字、`fill="white"` で明示的に白抜き指定）・文字数(空白除く)用（`ICON_CHARS_NO_SPACE`: `line` + `polyline` で内向き矢印2本＝圧縮イメージ、`g` の `stroke="white"` を継承）・単語数用（`ICON_WORDS`: `rect` + `path` で吹き出し）・読了時間用（`ICON_CLOCK`: `circle` + `line` で時計）の4種類を定義。細い線を複数組み合わせた抽象図形は 1em 前後の表示サイズでは視認性が低いため、単一の大きなモチーフで判別しやすくする方針にしている。
 
 - **`enhanceWiki(wiki)`**: `computeStats(getBodyText(wiki))` → `buildWidget()` を `wiki.prepend()`、`data-gpwc-enhanced="1"` を設定。
 
@@ -106,8 +112,11 @@ growi-plugin-word-counter/
 | CSS 変数 | `--gpwc-*` |
 | opt-out（カウント非表示） | `data-no-wordcount` |
 | ウィジェットクラス | `gpwc-widget` |
-| ウィジェット内アイコンクラス | `gpwc-icon` |
 | ウィジェット内セグメントクラス | `gpwc-seg` |
+| セグメント内 SVG アイコンクラス | `gpwc-seg-icon` |
+| アイコンバッジ背景クラス | `gpwc-seg-icon-bg` |
+| アイコンバッジ背景色変数 | `--gpwc-icon-bg`（テーマ非依存の固定値） |
+| セグメント内ラベルテキストクラス | `gpwc-seg-text` |
 | pluginActivators キー | `growi-plugin-word-counter` |
 
 ## ハマりどころ（必読・GROWI プラグイン共通）
@@ -141,7 +150,7 @@ Edit → View 遷移で `location.hash` のみが変わる場合、`pushState` �
 
 ### 6. ウィジェット自身の文字をカウントに混入させない
 
-`.wiki` 配下に注入した `<div class="gpwc-widget">` は DOM 上 `.wiki` の子であるため、素朴に `wiki.textContent` を取ると自分自身の表示文字列（`📝 1,234字` 等）が次回のカウントに混入し、再計算のたびに数値がずれていく。`getBodyText()` で clone してからウィジェットのみ除去して集計することでこれを防ぐ。
+`.wiki` 配下に注入した `<div class="gpwc-widget">` は DOM 上 `.wiki` の子であるため、素朴に `wiki.textContent` を取ると自分自身の表示文字列（`1,234 chars` 等）が次回のカウントに混入し、再計算のたびに数値がずれていく。`getBodyText()` で clone してからウィジェットのみ除去して集計することでこれを防ぐ。
 
 ### 7. `<code>` 同様、既存 DOM 構造を破壊しない
 
@@ -152,6 +161,12 @@ Edit → View 遷移で `location.hash` のみが変わる場合、`pushState` �
 GROWI は見出し（h1-h6）タグの**内部**（子要素として）にパーマリンクアンカー（`.revision-head-link`、テキストは `#`）を挿入する。また見出しの編集ボタン（`.revision-head-edit-button`）や表（Handsontable）の編集ボタン（`.handsontable-modal-trigger`）など、複数の異なる UI 要素で共通して `.material-symbols-outlined`（Material Symbols フォントのリガチャ表示用クラス）が使われており、見た目はアイコン1つでも DOM 上は `edit_square` のような英単語がそのまま生テキストとして入っている。個別のボタンクラスを都度追いかけるより、**アイコンフォントのクラス自体を一括除外**する方が、今後 GROWI が同じパターンで追加する他の編集ボタンにも効く。ただし表本体を巻き込まないよう、除外対象は**アイコン span 自体**に限定し、テーブルなど周囲のラッパー要素ごと除外しないこと（実データが消えてしまう）。
 
 同種の「アイコンフォントのリガチャテキスト」パターンが GROWI の他の UI 要素にもないか、実装追加時は注意すること。
+
+### 9. SVG `<text>` の垂直中央揃えは `dominant-baseline` キーワードに頼らず座標計算で行う
+
+`ICON_CHARS`（円バッジ内の「A」1文字）で `dominant-baseline: central` を使うと下寄りに、`middle` を使うと上寄りに表示された。`central`/`middle` はフォント・ブラウザ依存の基準線でブレやすく、単一文字を厳密に中央揃えしたい用途には不向きと判断した。
+
+最終的に `dominant-baseline` は指定せず標準の alphabetic ベースラインのまま、`y` をキャップハイト分だけ中心からずらして計算する方式にした: `y = 中心の y座標 + font-size * 0.36`（キャップハイトは概ね font-size の 0.72 倍とされるため、その半分だけ中心から下げるとキャップハイトの中央が図形の中心に一致する）。このアイコンでは中心 `cy=12`・`font-size=18` なので `y = 12 + 18 * 0.36 ≈ 18.5` としている。他のフォントサイズ・中心座標でも同じ式で計算し直すこと。
 
 ## デプロイ手順
 
@@ -168,8 +183,10 @@ GROWI 管理画面 `/admin/plugins` で **削除 → 再インストール**。
 
 1. `pnpm build` が成功し `dist/manifest.json` が出力される
 2. GROWI で削除 → 再インストール後、DevTools Network で `client-entry-*.js` が 200 で取得される
-3. 閲覧モードでページを開くと本文先頭に `📝 N字` ウィジェットが表示される
+3. 閲覧モードでページを開くと本文先頭に `N chars / M chars (no spaces) / K words / ~T min read` ウィジェットが表示される
 4. 表示文字数がページ本文の実文字数と一致する（ウィジェット自身の文字は含まない）
+4a. 各指標（chars / chars (no spaces) / words / min read）の先頭に、絵文字ではなく SVG アイコンが表示される（太字の「A」・内向き矢印・吹き出し・時計）。小サイズでも図形が判別できる
+4b. 各アイコンが円形の塗りバッジ＋白抜き図形で表示される。ダークモードに切り替えても円バッジの色が変わらず、白い図形が引き続き視認できる（`--gpwc-icon-bg` がテーマ非依存のため）
 5. `.wiki` に `data-no-wordcount` を付与するとウィジェットが表示されない
 6. `/edit`・`#edit`・編集モードへ遷移するとウィジェットが消える（cleanupAll）
 7. 編集モードから閲覧モードに戻るとウィジェットが再生成される

@@ -1,6 +1,6 @@
 import './styles/wordCounter.css';
 import { computeStats } from './stats';
-import type { PageStats } from './types';
+import type { PageStats, SvgShapeDef } from './types';
 
 const WIDGET_CLASS = 'gpwc-widget';
 const ENHANCED_ATTR = 'data-gpwc-enhanced';
@@ -152,10 +152,104 @@ const getBodyText = (wiki: HTMLElement): string => {
   return extractTextWithBlockBreaks(clone);
 };
 
-const createSegment = (text: string): HTMLSpanElement => {
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// 各指標のアイコンを構成する図形定義。24x24 viewBox で、円バッジ（currentColor 塗り）の
+// 上に白抜き（stroke/fill: white）で重ねる前提の座標にしている（実際の描画は createSvgIcon）。
+// 絵文字やアイコンフォントは使わず、`createElementNS` で自己完結の SVG として生成する。
+
+// 初期案（横線3本 / 目盛り付きルーラー / 角丸ブロック3つ）は細い線を複数組み合わせた
+// 抽象的な図形で、実表示サイズ（1em 前後）では潰れて視認性が低かったため、
+// 単一の大きなモチーフで一目で判別できるデザインに変更した。
+
+/** 文字数（空白含む）: 太字の「A」1文字＝文字を扱う指標であることを直接示す */
+const ICON_CHARS: SvgShapeDef[] = [
+  {
+    tag: 'text',
+    attrs: {
+      // dominant-baseline のキーワード（central / middle）はブラウザ・フォント依存で
+      // 上下にブレやすいため使わず、標準の alphabetic ベースラインのまま
+      // y をキャップハイト分（font-size の約 0.72 の半分）だけ中心から下げて中央に合わせる。
+      x: '12',
+      y: '18.5',
+      'text-anchor': 'middle',
+      'font-size': '18',
+      'font-weight': '700',
+      fill: 'white',
+      stroke: 'none',
+    },
+    text: 'A',
+  },
+];
+
+/** 文字数（空白除く）: 内向きの矢印2本＝余白を詰める（圧縮する）イメージ */
+const ICON_CHARS_NO_SPACE: SvgShapeDef[] = [
+  { tag: 'line', attrs: { x1: '2', y1: '12', x2: '9', y2: '12', 'stroke-width': '2', 'stroke-linecap': 'round' } },
+  {
+    tag: 'polyline',
+    attrs: { points: '6,8 9,12 6,16', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+  },
+  { tag: 'line', attrs: { x1: '22', y1: '12', x2: '15', y2: '12', 'stroke-width': '2', 'stroke-linecap': 'round' } },
+  {
+    tag: 'polyline',
+    attrs: { points: '18,8 15,12 18,16', 'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' },
+  },
+];
+
+/** 単語数: 吹き出し（スピーチバブル）＝発話・言葉を表す */
+const ICON_WORDS: SvgShapeDef[] = [
+  { tag: 'rect', attrs: { x: '3', y: '4', width: '18', height: '12', rx: '3', 'stroke-width': '2' } },
+  { tag: 'path', attrs: { d: 'M8 16 L7 20 L12 16 Z', 'stroke-width': '2', 'stroke-linejoin': 'round' } },
+];
+
+/** 読了時間: 時計 */
+const ICON_CLOCK: SvgShapeDef[] = [
+  { tag: 'circle', attrs: { cx: '12', cy: '12', r: '9', 'stroke-width': '2' } },
+  { tag: 'line', attrs: { x1: '12', y1: '12', x2: '12', y2: '7', 'stroke-width': '2', 'stroke-linecap': 'round' } },
+  { tag: 'line', attrs: { x1: '12', y1: '12', x2: '16', y2: '14', 'stroke-width': '2', 'stroke-linecap': 'round' } },
+];
+
+// アイコンは「currentColor の円バッジ + 白抜きの図形」で構成する。
+// 図形自体は元々アイコン全体（24x24）を使う想定で座標を組んでいるため、円バッジ内に
+// 収まるよう `scale(0.7)` で中心基準に縮小してから重ねる。
+const createSvgIcon = (shapes: SvgShapeDef[]): SVGSVGElement => {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'gpwc-seg-icon');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const badge = document.createElementNS(SVG_NS, 'circle');
+  badge.setAttribute('class', 'gpwc-seg-icon-bg');
+  badge.setAttribute('cx', '12');
+  badge.setAttribute('cy', '12');
+  badge.setAttribute('r', '11');
+  svg.appendChild(badge);
+
+  const group = document.createElementNS(SVG_NS, 'g');
+  group.setAttribute('transform', 'translate(12,12) scale(0.7) translate(-12,-12)');
+  group.setAttribute('fill', 'none');
+  group.setAttribute('stroke', 'white');
+  shapes.forEach(({ tag, attrs, text }) => {
+    const el = document.createElementNS(SVG_NS, tag);
+    Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+    if (text !== undefined) el.textContent = text;
+    group.appendChild(el);
+  });
+  svg.appendChild(group);
+
+  return svg;
+};
+
+const createSegment = (icon: SvgShapeDef[], text: string): HTMLSpanElement => {
   const seg = document.createElement('span');
   seg.className = 'gpwc-seg';
-  seg.textContent = text;
+  seg.appendChild(createSvgIcon(icon));
+
+  const label = document.createElement('span');
+  label.className = 'gpwc-seg-text';
+  label.textContent = text;
+  seg.appendChild(label);
+
   return seg;
 };
 
@@ -163,25 +257,19 @@ const buildWidget = (stats: PageStats): HTMLDivElement => {
   const widget = document.createElement('div');
   widget.className = WIDGET_CLASS;
   widget.setAttribute('role', 'status');
-  widget.setAttribute('aria-label', `文字数 ${stats.charsWithSpaces.toLocaleString()}字`);
-
-  const icon = document.createElement('span');
-  icon.className = 'gpwc-icon';
-  icon.textContent = '📝';
-  icon.setAttribute('aria-hidden', 'true');
-  widget.appendChild(icon);
+  widget.setAttribute('aria-label', `${stats.charsWithSpaces.toLocaleString()} characters`);
 
   if (SHOW_CHARS_WITH_SPACES) {
-    widget.appendChild(createSegment(`${stats.charsWithSpaces.toLocaleString()}字`));
+    widget.appendChild(createSegment(ICON_CHARS, `${stats.charsWithSpaces.toLocaleString()} chars`));
   }
   if (SHOW_CHARS_NO_SPACES) {
-    widget.appendChild(createSegment(`${stats.charsNoSpaces.toLocaleString()}字(空白除く)`));
+    widget.appendChild(createSegment(ICON_CHARS_NO_SPACE, `${stats.charsNoSpaces.toLocaleString()} chars (no spaces)`));
   }
   if (SHOW_WORDS) {
-    widget.appendChild(createSegment(`${stats.words.toLocaleString()}語`));
+    widget.appendChild(createSegment(ICON_WORDS, `${stats.words.toLocaleString()} words`));
   }
   if (SHOW_READING_MINUTES) {
-    widget.appendChild(createSegment(`約${stats.readingMinutes}分`));
+    widget.appendChild(createSegment(ICON_CLOCK, `~${stats.readingMinutes} min read`));
   }
 
   return widget;
