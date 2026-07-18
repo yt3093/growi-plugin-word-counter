@@ -24,19 +24,29 @@
 | 改行の二重カウント防止 | GROWI がタグ間に整形用の改行テキストノードを出力するケース（例: `<blockquote>\n<p>a</p>\n</blockquote>`）では、その改行と `extractTextWithBlockBreaks` が挿入する区切りの `\n` が重なって連続してしまう。`extractTextWithBlockBreaks` は最後に `\s*\n\s*` を単一の `\n` へ正規化し、さらに先頭・末尾の空白を `trim()` することで、`空白含む` 文字数が改行の重複分だけ水増しされるのを防ぐ |
 | 日本語対応の単語数カウント | `stats.ts` の `countWords` は `Intl.Segmenter`（`granularity: 'word'`）を使い、スペース区切りが無い日本語文でも意味のある単語単位に分割してカウントする（ライブラリ追加不要）。未対応の古い環境向けにスペース区切りへのフォールバックを用意 |
 | コードブロック除外 | ` ``` ` で囲んだコードブロック（`<pre>` 要素、内部の `<code>` ごと）はカウント対象から除外。インラインコード（`` `code` ``）は除外しない。`EXCLUDED_SELECTORS` 配列で管理し、drawio・数式など追加除外対象を実機確認後に追加できる構造にしている |
+| mermaid 図（副次的に除外済み） | ` ```mermaid ` ブロックは GROWI が `<pre><div><svg>...</svg></div></pre>` という構造でレンダリングし、ノードラベルのテキスト（`<span class="nodeLabel"><p>開始</p></span>` 等）を含む SVG 全体が `<pre>` の中に描画される。追加実装不要で `pre` 除外がそのまま効くため、drawio と同じ「図表は除外」方針を自動的に満たしている（実機 DOM で確認済み、`wordCounter.test.ts` にテストケースあり） |
+| PlantUML 図（対応不要） | ` ```plantuml ` ブロックは `<div data-growi-is-content-rendering="false"><img src="https://www.plantuml.com/plantuml/svg/...">` という構造で、外部の PlantUML サーバーが生成した SVG 画像を `<img>` として埋め込む（`<pre>` には包まれない）。`<img>` は子ノードを持たない void 要素で `textContent` が常に空文字列になるため、ラベルテキストがそもそも DOM に存在せず追加のセレクタなしで安全（実機 DOM で確認済み、`wordCounter.test.ts` にテストケースあり） |
 | drawio 除外 | `<div class="drawio-viewer">` 配下（図面 XML は `data-mxgraph` 属性値のため元々 `textContent` には含まれないが、SVG 内 `<foreignObject>` の図形ラベルは実テキストノードとしてカウントに混入するため）はカウント対象から除外。CSS Modules 由来のハッシュ付きクラス（`_drawio-viewer_xxxxx_N`）はバージョン間で変わるため使わず、素の `drawio-viewer` クラスで判定 |
 | KaTeX 数式除外 | `<span class="katex">`（インライン）/ `<span class="katex-display"><span class="katex">`（ブロック）をカウント対象から除外。`.katex` 配下は `.katex-mathml`（隠し MathML 層。`<annotation>` に生 TeX ソースを保持）と `.katex-html`（実表示層）の2層構造で、素朴に textContent を取ると同じ数字・記号が二重にカウントされるため、`.katex` ごと除外して二重カウントと TeX ソース混入を同時に解消している |
 | 見出しパーマリンク除外 | GROWI は見出し（h1-h6）の中に `<a class="revision-head-link">#</a>`（パーマリンクアンカー、テキストとして `#` を持つ）を挿入する。見出しごとに繰り返し出現するため `EXCLUDED_SELECTORS` で除外している |
 | アイコンフォント除外 | `.material-symbols-outlined` は Material Symbols フォントのリガチャ表示用クラスで、見た目はアイコン1つでも DOM 上は `edit_square` 等の英単語が生テキストとして入っている。見出しの編集ボタン・表（Handsontable）の編集ボタンなど GROWI の各種編集 UI で繰り返し使われるため、個別のボタンクラスではなくこのアイコンフォントクラス自体を `EXCLUDED_SELECTORS` で一括除外している |
+| 脚注 UI マーカー除外 | 本文中の脚注参照マーカー（`<sup><a data-footnote-ref>1</a></sup>`、テキストは連番の数字）と、脚注一覧末尾の戻りリンク（`<a data-footnote-backref>↩</a>`、テキストは矢印記号）を `[data-footnote-ref]` / `[data-footnote-backref]` 属性セレクタで除外。脚注そのものの内容テキスト（`<li>` 内の本文）は著者が書いた実コンテンツなので除外しない |
 | deactivate | 全 listener 解除・MutationObserver.disconnect・モンキーパッチ復元・`.gpwc-widget` 削除・`data-gpwc-enhanced` 属性削除。本文 DOM は完全無変更で復元 |
 | ダークモード | `@media (prefers-color-scheme: dark)` と `html[data-bs-theme="dark"]`（Bootstrap 5.3 GROWI UI トグル）の双方で CSS 変数を上書き |
 | 印刷最適化 | `@media print` でウィジェット非表示 |
 
 ### 未実装（将来フェーズ）
 
-- 複数 `.wiki` が存在するページ（コメント欄など）でのセレクタ絞り込み精査（要実機確認）
 - 選択範囲のみのカウント（現状は本文全体のみが対象）
-- **MathJax 対応**: 実機で確認できた数式レンダリングは KaTeX（`.katex` クラス）のみで、`.katex` を `EXCLUDED_SELECTORS` に追加済み。GROWI が MathJax レンダリングも使うページがあれば DOM 構造（`.MathJax` / `mjx-container` 等、未確認）を確認の上セレクタを追加する
+
+**確認済み・対応不要と判断したもの:**
+
+- **MathJax 対応は不要**: 実機で確認できた数式レンダリングは KaTeX（`.katex` クラス）のみで、`.katex` を `EXCLUDED_SELECTORS` に追加済み。複数のページ・複数の数式（分数、総和、行列等）で確認したが、いずれも `.katex` 構造で MathJax（`.MathJax` / `mjx-container` 等）は使われていなかった。この GROWI インスタンスでは MathJax 対応は不要と判断する
+- **mermaid 図は追加対応不要**: `pre` 除外がそのまま効くため、drawio と同じ「図表は除外」方針を自動的に満たす（上記の機能表を参照）
+- **PlantUML 図は追加対応不要**: `<img>` として画像化されるため textContent が空になる（上記の機能表を参照）
+- **添付ファイルのプレビューは追加対応不要**: `<p><button aria-label="image.png"><img alt="image.png" src="/attachment/..."></button></p>` という構造で、ファイル名は `aria-label` / `alt` 属性としてのみ存在し実テキストノードが無い。`<img>` 自体も void 要素で textContent が空。属性はそもそも `textContent` に含まれないため（drawio の `data-mxgraph` と同様の理由）、追加のセレクタなしで安全（実機 DOM で確認済み、`wordCounter.test.ts` にテストケースあり）
+- **PlantUML 図は追加対応不要**: `<div data-growi-is-content-rendering="false"><img src="https://www.plantuml.com/plantuml/svg/...">` という構造で、外部の PlantUML サーバーが生成した SVG 画像を `<img>` として埋め込んでいる（`<pre>` には包まれない）。`<img>` は子ノードを持たない void 要素で `textContent` が常に空文字列になるため、図中のラベルテキストはそもそも DOM 上に存在せず、追加のセレクタ無しで安全
+- **複数 `.wiki` 問題は対応済み**: コメント本文も `<div class="page-comment-body"><div class="wiki comment">...` という構造で `.wiki` クラスを持つ（実機確認済み）ため、ページにコメントが付くと `.wiki` が複数ヒットする。`WIKI_SELECTOR` を `.wiki:not(.comment)` にすることで、DOM 順（本文とコメントの前後関係）に依存せず確実に本文側だけを選ぶようにした。`wordCounter.test.ts` に DOM 順を入れ替えたケースを含む回帰テストあり
 
 ## アーキテクチャ
 
@@ -51,13 +61,16 @@ growi-plugin-word-counter/
 ├── client-entry.tsx                # activate / deactivate + pluginActivators 登録
 ├── src/
 │   ├── wordCounter.ts              # コア実装（スキャン・ウィジェット注入・SPA 遷移・クリーンアップ）
+│   ├── wordCounter.test.ts         # wordCounter.ts の Vitest テスト
 │   ├── stats.ts                    # computeStats(text) 純粋関数
-│   ├── types.ts                    # 共有型定義（PageStats / Window.pluginActivators）
+│   ├── stats.test.ts               # stats.ts の Vitest テスト
+│   ├── types.ts                    # 共有型定義（PageStats / SvgShapeDef / Window.pluginActivators）
 │   └── styles/wordCounter.css      # ウィジェットスタイル・ダークモード・@media print
 ├── package.json
 ├── tsconfig.json
 ├── tsconfig.node.json
 ├── vite.config.ts                  # build.manifest: 'manifest.json' を明示
+├── vitest.config.ts                # environment: 'jsdom'
 ├── pnpm-lock.yaml
 └── dist/                           # ビルド成果物（コミット必須）
     ├── manifest.json
@@ -72,9 +85,9 @@ growi-plugin-word-counter/
 
 - **`scanAndEnhance()`**: `isHiddenContext()` が true なら全ウィジェットを `cleanupAll()` して終了。`getMainWiki()` で本文要素を取得し、`data-no-wordcount` があれば（付与済みなら）片付けて終了。`data-gpwc-enhanced` が未付与なら `enhanceWiki()`、付与済みなら `updateWiki()`（再計算のみ）。
 
-- **`getMainWiki()`**: `document.querySelector('.wiki')` で本文要素を取得。**現状は先頭 1 件のみを対象**にしており、コメント欄等で複数 `.wiki` がヒットするケースは未検証（要実機確認）。
+- **`getMainWiki()`**: `document.querySelector(WIKI_SELECTOR)`（`WIKI_SELECTOR = '.wiki:not(.comment)'`）で本文要素を取得。コメント本文も `.wiki` クラスを持つ（`<div class="wiki comment">`）ため `:not(.comment)` で明示的に除外し、DOM 順に依存せず本文側だけを選ぶ。
 
-- **`getBodyText(wiki)`**: `wiki.cloneNode(true)` した clone から、自身のウィジェット（`:scope > .gpwc-widget`）と `EXCLUDED_SELECTORS`（`pre` / `.drawio-viewer` / `.katex` / `.revision-head-link` / `.material-symbols-outlined`）に該当する要素を `remove()` してから `extractTextWithBlockBreaks(clone)` でテキストを収集する（元の DOM には触れない）。
+- **`getBodyText(wiki)`**: `wiki.cloneNode(true)` した clone から、自身のウィジェット（`:scope > .gpwc-widget`）と `EXCLUDED_SELECTORS`（`pre` / `.drawio-viewer` / `.katex` / `.revision-head-link` / `.material-symbols-outlined` / `[data-footnote-ref]` / `[data-footnote-backref]`）に該当する要素を `remove()` してから `extractTextWithBlockBreaks(clone)` でテキストを収集する（元の DOM には触れない）。
 
 - **`extractTextWithBlockBreaks(root)`**: `root.childNodes` を再帰的に walk し、テキストノードは `textContent` をそのまま集める。要素ノードは子を先に walk してから、`BLOCK_TAGS`（`p`/`div`/`li`/`h1`-`h6`/`table` 系/`br` 等）に該当するタグであれば末尾に `'\n'` を追加する。これにより `<h2>見出し</h2><p>本文</p>` のような隣接ブロック要素の境界にも区切りが入り、単純な `textContent` 結合で単語が誤って連結される問題を防ぐ。最後に `.replace(/\s*\n\s*/g, '\n').trim()` で、改行を含む空白の連続をブロック境界1つにつき改行1文字へ正規化し、先頭・末尾の余分な空白も除去する（GROWI 自身がタグ間に出力する整形用の改行と、ここで挿入した区切りの `\n` が重なって二重カウントされるのを防ぐため）。
 
@@ -168,6 +181,22 @@ GROWI は見出し（h1-h6）タグの**内部**（子要素として）にパ�
 
 最終的に `dominant-baseline` は指定せず標準の alphabetic ベースラインのまま、`y` をキャップハイト分だけ中心からずらして計算する方式にした: `y = 中心の y座標 + font-size * 0.36`（キャップハイトは概ね font-size の 0.72 倍とされるため、その半分だけ中心から下げるとキャップハイトの中央が図形の中心に一致する）。このアイコンでは中心 `cy=12`・`font-size=18` なので `y = 12 + 18 * 0.36 ≈ 18.5` としている。他のフォントサイズ・中心座標でも同じ式で計算し直すこと。
 
+### 10. `.wiki` クラスは本文以外（コメント本文）にも付く
+
+GROWI はコメントの本文も `<div class="page-comment-body"><div class="wiki comment"><p>...</p></div></div>` という構造でレンダリングしており、**コメント本文も `.wiki` クラスを持つ**。`document.querySelector('.wiki')`（DOM 順で先頭 1 件）のような単純なセレクタだと、ページのレイアウトによってはコメント側を本文と誤認するリスクがある。
+
+コメント側の `.wiki` には `comment` という追加クラスが付くため、`WIKI_SELECTOR` を `.wiki:not(.comment)` として明示的に除外し、DOM 順に依存しない実装にしている。他の副次的な `.wiki`（今後 GROWI が追加する可能性のある機能）が見つかった場合も、同様に追加クラスでの除外を検討すること。
+
+## テスト
+
+`pnpm test`（Vitest, `environment: 'jsdom'`）で `src/stats.test.ts` / `src/wordCounter.test.ts` を実行する。`pnpm test:watch` でウォッチモード。
+
+**このテストスイートを作った経緯**: 実装初期は `stats.ts`/`extractTextWithBlockBreaks`/アイコン生成のロジックを都度 `.tmp-*.cjs` のような使い捨てスクリプトにコピー&ペーストして `jsdom` で手動検証していた。この方式は**実装本体と検証コードが別物になり、コピーが実装からズレても気づけない**という弱点があったため、Vitest で本体を直接 `import` する恒久的なテストに置き換えた。
+
+- **`extractTextWithBlockBreaks` / `getBodyText` / `isHiddenContext`**（`src/wordCounter.ts`）: テストから直接 `import` するために `export` を付与している。`client-entry.tsx` は `createWordCounter` のみを使うため、この export はビルド成果物（`dist/`）のサイズ・内容に影響しない（Vite が未使用 export を tree-shake する）。
+- **`wordCounter.test.ts`** には、この会話で実機の DOM から発見した回帰ケース（GROWI の見出しパーマリンク・見出し/表の編集ボタンのアイコンリガチャ・`<blockquote>\n<p>a</p>\n</blockquote>` の改行二重カウント等）をそのまま固定のテストケースとして含めている。今後 `EXCLUDED_SELECTORS` や `extractTextWithBlockBreaks` を変更する際は、まずこれらのテストを通すこと。
+- **`createWordCounter()` の統合テスト**は同期的に検証できる範囲（初回 `mount()`・`data-no-wordcount`・非表示コンテキスト・`unmount()` の完全復元）のみをカバーしている。`pushState`/`hashchange` 経由の非同期再スキャン（`requestAnimationFrame` 2 段待ち）は今回のスコープでは未カバー（フェイクタイマー等の追加セットアップが必要なため）。
+
 ## デプロイ手順
 
 ```bash
@@ -181,7 +210,8 @@ GROWI 管理画面 `/admin/plugins` で **削除 → 再インストール**。
 
 ## 動作確認チェックリスト
 
-1. `pnpm build` が成功し `dist/manifest.json` が出力される
+1. `pnpm test` が全て成功する
+1a. `pnpm build` が成功し `dist/manifest.json` が出力される
 2. GROWI で削除 → 再インストール後、DevTools Network で `client-entry-*.js` が 200 で取得される
 3. 閲覧モードでページを開くと本文先頭に `N chars / M chars (no spaces) / K words / ~T min read` ウィジェットが表示される
 4. 表示文字数がページ本文の実文字数と一致する（ウィジェット自身の文字は含まない）
@@ -207,7 +237,7 @@ GROWI 管理画面 `/admin/plugins` で **削除 → 再インストール**。
 - **git 操作は行わない**。`git add` / `git commit` / `git push` / `git restore` / `git checkout` などの git コマンドは一切実行しないこと。コミットやプッシュが必要な場面ではユーザーに依頼し、こちらでは行わない。
   - 変更内容のサマリだけ提示し、コミットメッセージ案を出す程度に留める。
   - 例外として `git status` / `git log` / `git diff` などの**読み取り専用**コマンドは状況把握のために実行してよい。
-- **pnpm 操作は Claude が行う**。`pnpm install` / `pnpm approve-builds` / `pnpm build` / `pnpm audit` はこちらで実行する。
+- **pnpm 操作は Claude が行う**。`pnpm install` / `pnpm approve-builds` / `pnpm build` / `pnpm test` / `pnpm audit` はこちらで実行する。
 
 - **セキュリティチェックを必ず行う**。コード変更を完了したら、コミット候補としてユーザーに提示する前に以下を確認すること。問題が見つかった場合はその場で修正するか、ユーザーに明示的に報告する。
   - **機密情報の混入**: API キー / トークン / パスワード / 秘密鍵 / `.env` 系ファイルの値が、ソースコード・コメント・`dist/` 配下のビルド成果物に含まれていないか。
