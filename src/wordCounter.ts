@@ -154,8 +154,8 @@ const getBodyText = (wiki: HTMLElement): string => {
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-// 各指標のアイコンを構成する図形定義。24x24 viewBox の線画（stroke ベース）で統一し、
-// `stroke="currentColor"` を使うことでダークモード・印刷時の配色に自動追従させる。
+// 各指標のアイコンを構成する図形定義。24x24 viewBox で、円バッジ（currentColor 塗り）の
+// 上に白抜き（stroke/fill: white）で重ねる前提の座標にしている（実際の描画は createSvgIcon）。
 // 絵文字やアイコンフォントは使わず、`createElementNS` で自己完結の SVG として生成する。
 
 // 初期案（横線3本 / 目盛り付きルーラー / 角丸ブロック3つ）は細い線を複数組み合わせた
