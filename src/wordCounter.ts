@@ -6,6 +6,7 @@ const WIDGET_CLASS = 'gpwc-widget';
 const ENHANCED_ATTR = 'data-gpwc-enhanced';
 const NO_COUNT_ATTR = 'data-no-wordcount';
 const NAVIGATE_EVENT = 'growi-pwc-navigate';
+const LOG_PREFIX = '[growi-plugin-word-counter]';
 
 // GROWI はレンダリング済み本文を `.wiki` に描画する。
 // コメント欄の各コメント本文も `<div class="page-comment-body"><div class="wiki comment">...`
@@ -321,24 +322,31 @@ const cleanupAll = (): void => {
   });
 };
 
+// GROWI 側の想定外の DOM 構造（今後のバージョンアップ等）で getBodyText/computeStats/
+// buildWidget のいずれかが例外を投げても、ページ全体やこのプラグインの以後の動作を
+// 止めないよう try/catch で囲む。エラーはコンソールに残し、次回のスキャンで復旧を試みる。
 const scanAndEnhance = (): void => {
-  if (isHiddenContext()) {
-    cleanupAll();
-    return;
-  }
+  try {
+    if (isHiddenContext()) {
+      cleanupAll();
+      return;
+    }
 
-  const wiki = getMainWiki();
-  if (!wiki) return;
+    const wiki = getMainWiki();
+    if (!wiki) return;
 
-  if (wiki.hasAttribute(NO_COUNT_ATTR)) {
-    if (wiki.hasAttribute(ENHANCED_ATTR)) cleanupWiki(wiki);
-    return;
-  }
+    if (wiki.hasAttribute(NO_COUNT_ATTR)) {
+      if (wiki.hasAttribute(ENHANCED_ATTR)) cleanupWiki(wiki);
+      return;
+    }
 
-  if (wiki.hasAttribute(ENHANCED_ATTR)) {
-    updateWiki(wiki);
-  } else {
-    enhanceWiki(wiki);
+    if (wiki.hasAttribute(ENHANCED_ATTR)) {
+      updateWiki(wiki);
+    } else {
+      enhanceWiki(wiki);
+    }
+  } catch (error) {
+    console.error(`${LOG_PREFIX} failed to update the word count widget`, error);
   }
 };
 

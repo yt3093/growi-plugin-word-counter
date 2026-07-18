@@ -83,7 +83,7 @@ growi-plugin-word-counter/
 
 **`createWordCounter()`** が公開 API で `{ mount, unmount }` を返す。
 
-- **`scanAndEnhance()`**: `isHiddenContext()` が true なら全ウィジェットを `cleanupAll()` して終了。`getMainWiki()` で本文要素を取得し、`data-no-wordcount` があれば（付与済みなら）片付けて終了。`data-gpwc-enhanced` が未付与なら `enhanceWiki()`、付与済みなら `updateWiki()`（再計算のみ）。
+- **`scanAndEnhance()`**: `isHiddenContext()` が true なら全ウィジェットを `cleanupAll()` して終了。`getMainWiki()` で本文要素を取得し、`data-no-wordcount` があれば（付与済みなら）片付けて終了。`data-gpwc-enhanced` が未付与なら `enhanceWiki()`、付与済みなら `updateWiki()`（再計算のみ）。本体全体を `try/catch` で囲んでおり、GROWI の想定外の DOM 構造等で `getBodyText`/`computeStats`/`buildWidget` のいずれかが例外を投げても `console.error('[growi-plugin-word-counter] ...')` に留めて処理を継続する（1回の失敗でプラグインの以後の動作が止まらないようにするため）。
 
 - **`getMainWiki()`**: `document.querySelector(WIKI_SELECTOR)`（`WIKI_SELECTOR = '.wiki:not(.comment)'`）で本文要素を取得。コメント本文も `.wiki` クラスを持つ（`<div class="wiki comment">`）ため `:not(.comment)` で明示的に除外し、DOM 順に依存せず本文側だけを選ぶ。
 
@@ -131,6 +131,7 @@ growi-plugin-word-counter/
 | アイコンバッジ背景色変数 | `--gpwc-icon-bg`（テーマ非依存の固定値） |
 | セグメント内ラベルテキストクラス | `gpwc-seg-text` |
 | pluginActivators キー | `growi-plugin-word-counter` |
+| コンソールログ prefix | `[growi-plugin-word-counter]`（`LOG_PREFIX`） |
 
 ## ハマりどころ（必読・GROWI プラグイン共通）
 

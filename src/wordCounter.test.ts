@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createWordCounter, extractTextWithBlockBreaks, getBodyText, isHiddenContext } from './wordCounter';
 
 const setBody = (html: string): HTMLElement => {
@@ -252,5 +252,25 @@ describe('createWordCounter (integration)', () => {
     const wiki = document.querySelector('.wiki');
     expect(wiki?.hasAttribute('data-gpwc-enhanced')).toBe(false);
     expect(wiki?.innerHTML).toBe('<p>hello world</p>');
+  });
+
+  it('does not throw and logs an error if something inside the scan pipeline fails unexpectedly', () => {
+    document.body.innerHTML = '<div class="wiki"><p>hello world</p></div>';
+    const wiki = document.querySelector('.wiki') as HTMLElement;
+    const cloneNodeSpy = vi.spyOn(wiki, 'cloneNode').mockImplementation(() => {
+      throw new Error('boom');
+    });
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const counter = createWordCounter();
+    expect(() => counter.mount()).not.toThrow();
+
+    expect(consoleErrorSpy).toHaveBeenCalledOnce();
+    expect(consoleErrorSpy.mock.calls[0][0]).toContain('[growi-plugin-word-counter]');
+    expect(document.querySelector('.gpwc-widget')).toBeNull();
+
+    counter.unmount();
+    cloneNodeSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
   });
 });
