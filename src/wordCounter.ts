@@ -6,11 +6,14 @@ const WIDGET_CLASS = 'gpwc-widget';
 const ENHANCED_ATTR = 'data-gpwc-enhanced';
 const NO_COUNT_ATTR = 'data-no-wordcount';
 const NAVIGATE_EVENT = 'growi-pwc-navigate';
+const LOG_PREFIX = '[growi-plugin-word-counter]';
 
 // GROWI はレンダリング済み本文を `.wiki` に描画する。
-// コメント欄など副次的な `.wiki` が存在する場合、現状は先頭の1件のみを対象にしている。
-// 実際の GROWI 環境で複数ヒットするようであればセレクタを絞り込む必要がある(要実機確認)。
-const WIKI_SELECTOR = '.wiki';
+// コメント欄の各コメント本文も `<div class="page-comment-body"><div class="wiki comment">...`
+// という構造で `.wiki` クラスを持つ（実機確認済み）。`.wiki` だけで検索すると、ページに
+// コメントが付いている場合に複数ヒットしてしまう。DOM 順（通常は本文が先・コメントが下）に
+// 依存せず確実に本文側だけを選ぶため、コメント側に付く `comment` クラスを明示的に除外する。
+const WIKI_SELECTOR = '.wiki:not(.comment)';
 
 // カウント対象から完全除外する要素のセレクタ。
 // コードブロックは GROWI が `<pre><div>...<code>` という構造でレンダリングするため
@@ -38,7 +41,20 @@ const WIKI_SELECTOR = '.wiki';
 // 見出しの編集ボタン（`.revision-head-edit-button` 配下）・表の編集ボタン
 // （`.handsontable-modal-trigger` 配下）など、GROWI の各種編集ボタンで繰り返し使われるため、
 // 個別のボタンクラスを追いかけるのではなくアイコンフォント自体を一括除外する。
-const EXCLUDED_SELECTORS = ['pre', '.drawio-viewer', '.katex', '.revision-head-link', '.material-symbols-outlined'];
+//
+// 脚注（footnote）は本文中の参照マーカー（`<sup><a data-footnote-ref>1</a></sup>`、
+// テキストは連番の数字）と、脚注一覧末尾の戻りリンク（`<a data-footnote-backref>↩</a>`、
+// テキストは矢印記号）の2箇所に UI 用のテキストが入る。どちらも本文と無関係なので除外するが、
+// 脚注そのものの内容テキスト（`<li>` 内の本文）は著者が書いた実コンテンツなので除外しない。
+const EXCLUDED_SELECTORS = [
+  'pre',
+  '.drawio-viewer',
+  '.katex',
+  '.revision-head-link',
+  '.material-symbols-outlined',
+  '[data-footnote-ref]',
+  '[data-footnote-backref]',
+];
 
 // UI に表示する指標のフラグ。stats.ts では常に全指標を計算しているため、
 // 将来的に単語数・読了時間を表示する場合はここを true にするだけでよい。
@@ -55,7 +71,9 @@ let popstateHandler: (() => void) | null = null;
 let hashchangeHandler: (() => void) | null = null;
 let scanScheduled = false;
 
-const isHiddenContext = (): boolean => {
+// `export` はテストから直接インポートするために付与している（client-entry.tsx は
+// createWordCounter のみを使うため、バンドル済み dist/ には影響しない）。
+export const isHiddenContext = (): boolean => {
   const path = window.location.pathname;
   const hash = window.location.hash;
 
@@ -112,7 +130,7 @@ const BLOCK_TAGS = new Set([
   'DD',
 ]);
 
-const extractTextWithBlockBreaks = (root: HTMLElement): string => {
+export const extractTextWithBlockBreaks = (root: HTMLElement): string => {
   const parts: string[] = [];
 
   const walk = (node: Node): void => {
@@ -143,7 +161,7 @@ const extractTextWithBlockBreaks = (root: HTMLElement): string => {
  * EXCLUDED_SELECTORS に該当する要素（コードブロックなど）はカウントに
  * 混入しないよう除外する。ブロック要素の境界には区切りを補って収集する。
  */
-const getBodyText = (wiki: HTMLElement): string => {
+export const getBodyText = (wiki: HTMLElement): string => {
   const clone = wiki.cloneNode(true) as HTMLElement;
   clone.querySelector(`:scope > .${WIDGET_CLASS}`)?.remove();
   EXCLUDED_SELECTORS.forEach((selector) => {
@@ -304,24 +322,31 @@ const cleanupAll = (): void => {
   });
 };
 
+// GROWI 側の想定外の DOM 構造（今後のバージョンアップ等）で getBodyText/computeStats/
+// buildWidget のいずれかが例外を投げても、ページ全体やこのプラグインの以後の動作を
+// 止めないよう try/catch で囲む。エラーはコンソールに残し、次回のスキャンで復旧を試みる。
 const scanAndEnhance = (): void => {
-  if (isHiddenContext()) {
-    cleanupAll();
-    return;
-  }
+  try {
+    if (isHiddenContext()) {
+      cleanupAll();
+      return;
+    }
 
-  const wiki = getMainWiki();
-  if (!wiki) return;
+    const wiki = getMainWiki();
+    if (!wiki) return;
 
-  if (wiki.hasAttribute(NO_COUNT_ATTR)) {
-    if (wiki.hasAttribute(ENHANCED_ATTR)) cleanupWiki(wiki);
-    return;
-  }
+    if (wiki.hasAttribute(NO_COUNT_ATTR)) {
+      if (wiki.hasAttribute(ENHANCED_ATTR)) cleanupWiki(wiki);
+      return;
+    }
 
-  if (wiki.hasAttribute(ENHANCED_ATTR)) {
-    updateWiki(wiki);
-  } else {
-    enhanceWiki(wiki);
+    if (wiki.hasAttribute(ENHANCED_ATTR)) {
+      updateWiki(wiki);
+    } else {
+      enhanceWiki(wiki);
+    }
+  } catch (error) {
+    console.error(`${LOG_PREFIX} failed to update the word count widget`, error);
   }
 };
 
