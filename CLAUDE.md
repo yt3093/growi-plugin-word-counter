@@ -190,7 +190,7 @@ Edit → View 遷移で `location.hash` のみが変わる場合、`pushState` �
 
 ### 5. MutationObserver の自己ループ防止
 
-`wiki.prepend(widget)` が発火させる `childList` mutation で追加ノードとして widget div が検出される。`node.classList.contains('gpwc-widget')` でスキップすることで無限スキャンを防ぐ（`isSelfInjected`）。
+`wiki.prepend(widget)` が発火させる `childList` mutation で追加ノードとして widget div が検出される。`isSelfInjected` で `.gpwc-widget` をスキップすることで無限スキャンを防ぐ。見出しバッジ（`.gpwc-heading-badge`）を追加した際も同様に `isSelfInjected` へ追加し忘れると、バッジ挿入のたびに再スキャン→バッジ再構築→再スキャン…の無限ループになる（自前で注入する要素を増やすたびに、この関数へ追加するのを忘れないこと）。
 
 ### 6. ウィジェット自身の文字をカウントに混入させない
 
