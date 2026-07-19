@@ -41,7 +41,8 @@
 |---|---|
 | オプトインの埋め込みタグ | ページ本文のどこかに ` ```gpwc-headings:chars ` のようなコードフェンスを1つ埋め込むと、そのページの全見出し（h1〜h6）にカウントバッジが表示される。値は `chars` / `chars-no-space` / `words` のいずれか1つを選択（`countWords` と同じロジックを使い分ける）。埋め込みが無いページでは何も表示されない（デフォルト無効）。マーカーのコードフェンス自体は `pre` 除外により本文カウントにも混入せず、見た目にも `.gpwc-heading-count-marker` クラスで非表示にする |
 | GROWI コアのフェンス解析挙動（実機確認済み・注意） | `` ```gpwc-headings:chars `` は GROWI 本体の言語:ファイル名パーサーによって**コロンではなくハイフンの位置**で区切られ、`<code class="language-gpwc">` + `<cite class="code-highlighted-title">headings:chars</cite>` という構造になる（一般的な `言語:ファイル名` のコロン分割ではない、GROWI 固有の挙動）。`findHeadingCountMetric` は `code[class*="language-gpwc"]` を起点に検出し、`<cite>` のテキストを `"headings:" + 値` の形式としてパースする |
-| 見出し単位の本文抽出 | `collectHeadingSections(wiki)` が `.wiki` の直下の子要素を見出し境界で区切り、各見出しの「自身の内容」（その見出し直後から次の見出し直前まで。見出しタイトル自体は含まない）を `getBodyText` と同じ `EXCLUDED_SELECTORS` + `extractTextWithBlockBreaks` で抽出する |
+| 見出し単位の本文抽出 | `collectHeadingSections(wiki)` が `.wiki` 内の全見出し（`querySelectorAll`、ネスト深さ不問）を文書順に取得し、`Range` API で各見出しの「自身の内容」（その見出し直後から次の見出し直前まで。見出しタイトル自体は含まない）を切り出す。`<blockquote>` 内にネストされた見出し（CommonMark 上 `> # 見出し` は文法上有効）も見落とさない。`getBodyText` と同じ `EXCLUDED_SELECTORS` + `extractTextWithBlockBreaks` で抽出する |
+| 無効な指標値への警告 | オプトインマーカーは見つかった（`"headings:"` 名前空間は一致）が値が `chars`/`chars-no-space`/`words` のいずれでもない場合、`console.warn('[growi-plugin-word-counter] invalid heading count metric ...')` を出す。マーカー自体が無い（機能オフ、正常な沈黙）場合との違いが分かるようにしている |
 | 階層集計ロジック | `aggregateHeadingCounts`（`src/headingCounts.ts`、DOM 非依存の純粋関数）が見出しレベルに基づくスタック走査で親子関係を求め、文書順の逆順に集計することで多段ネストも正しく積み上げる。子を持つ見出しは「自身/配下すべて合計」、末端見出し（子なし）は自身のみを表示する。同階層の兄弟見出し同士は互いのカウントを含まない（共通の祖先にのみ加算） |
 | 見出しバッジの表示 | 各見出し要素の末尾に `<span class="gpwc-heading-badge">` を追加。ページ全体ウィジェットと同じ `createSvgIcon` の白抜きバッジアイコン（`chars`=太字「A」、`chars-no-space`=内向き矢印、`words`=吹き出し）を指標に応じて使い回す。子を持つ見出しは `自身/合計`、末端見出しは `自身` のみを表示（分母なし） |
 | 自己参照除外 | 見出しバッジ自身のテキスト（`"6/9"` 等）はページ全体ウィジェットのカウント・見出しごとのカウントいずれにも混入しないよう `EXCLUDED_SELECTORS` に `.gpwc-heading-badge` を追加している。また `isSelfInjected` にも `.gpwc-heading-badge` を追加し、バッジの挿入/再構築自体が MutationObserver の無限ループを起こさないようにしている |
@@ -50,6 +51,9 @@
 ### 未実装（将来フェーズ）
 
 - 選択範囲のみのカウント（現状は本文全体のみが対象）
+- 見出しカウント機能: 複数指標の同時表示（現状は `chars`/`chars-no-space`/`words` から1つのみ選択）
+- 見出しカウント機能: 対象見出しレベルの絞り込み（現状は h1〜h6 すべてが対象）
+- 見出しカウント機能: バッジのツールチップ/aria-label でカウントの意味を説明する
 
 **確認済み・対応不要と判断したもの:**
 
@@ -58,6 +62,7 @@
 - **PlantUML 図は追加対応不要**: `<img>` として画像化されるため textContent が空になる（上記の機能表を参照）
 - **添付ファイルのプレビューは追加対応不要**: `<p><button aria-label="image.png"><img alt="image.png" src="/attachment/..."></button></p>` という構造で、ファイル名は `aria-label` / `alt` 属性としてのみ存在し実テキストノードが無い。`<img>` 自体も void 要素で textContent が空。属性はそもそも `textContent` に含まれないため（drawio の `data-mxgraph` と同様の理由）、追加のセレクタなしで安全（実機 DOM で確認済み、`wordCounter.test.ts` にテストケースあり）
 - **複数 `.wiki` 問題は対応済み**: コメント本文も `<div class="page-comment-body"><div class="wiki comment">...` という構造で `.wiki` クラスを持つ（実機確認済み）ため、ページにコメントが付くと `.wiki` が複数ヒットする。`WIKI_SELECTOR` を `.wiki:not(.comment)` にすることで、DOM 順（本文とコメントの前後関係）に依存せず確実に本文側だけを選ぶようにした。`wordCounter.test.ts` に DOM 順を入れ替えたケースを含む回帰テストあり
+- **見出しカウント機能（フェーズ2）は実機で通し確認済み**: 実際の GROWI ページで ` ```gpwc-headings:chars-no-space ` を埋め込み、①見出しごとにバッジが正しく表示される、②集計値が実際の文章量と一致する、③マーカーのコードフェンス自体が表示されない、の3点を確認。実機 DOM でも `.gpwc-heading-badge` が見出し要素（パーマリンク・タイトル・編集ボタンの後ろ）に正しく挿入され、桁区切り表示（`1,000/1,010`）も含めて設計通りに動作することを確認した
 
 ## アーキテクチャ
 
@@ -120,9 +125,9 @@ growi-plugin-word-counter/
 
 - **`cleanupWiki(wiki)` / `cleanupAll()`**: ウィジェットを `remove()` し `data-gpwc-enhanced` を削除。`cleanupAll()` はページ上の全 `.gpwc-widget` に加え、全 `.gpwc-heading-badge` と `.gpwc-heading-count-marker`（見出しカウントのオプトインマーカーの非表示クラス）も削除・解除する（`unmount()` と非表示コンテキスト遷移時の両方で使用）。
 
-- **`findHeadingCountMetric(wiki)`**: 見出しカウント機能のオプトインマーカーを検出する。`code[class*="language-gpwc"]` を起点に、対応する `<pre>` に `gpwc-heading-count-marker` クラスを付与して非表示にし、`<cite class="code-highlighted-title">` のテキストを取得する。GROWI コアのフェンス解析は ` ```gpwc-headings:chars ` を**コロンではなくハイフンの位置**で区切るため、`<cite>` には `"headings:chars"` のように名前空間とコロンを含む文字列がまるごと入る（実機確認済み）。`"headings:"` プレフィックスを検証してから値を取り出し、`chars` / `chars-no-space` / `words` のいずれでもなければ無効として扱う。
+- **`findHeadingCountMetric(wiki)`**: 見出しカウント機能のオプトインマーカーを検出する。`code[class*="language-gpwc"]` を起点に、対応する `<pre>` に `gpwc-heading-count-marker` クラスを付与して非表示にし、`<cite class="code-highlighted-title">` のテキストを取得する。GROWI コアのフェンス解析は ` ```gpwc-headings:chars ` を**コロンではなくハイフンの位置**で区切るため、`<cite>` には `"headings:chars"` のように名前空間とコロンを含む文字列がまるごと入る（実機確認済み）。`"headings:"` プレフィックスを検証してから値を取り出し、`chars` / `chars-no-space` / `words` のいずれでもなければ `console.warn` を出して無効として扱う（マーカー自体が無い場合は警告なしで静かに無効。「オフ」と「設定ミス」を区別するため）。
 
-- **`collectHeadingSections(wiki)`**: `.wiki` 直下の子要素を見出し（h1〜h6）の出現位置で区切り、各見出しの「自身の内容」（その見出し直後から次の見出し直前まで、見出しタイトル自体は含まない）を、`getBodyText` と同じ `EXCLUDED_SELECTORS` + `extractTextWithBlockBreaks` で抽出する。テスト用に `export` している。
+- **`collectHeadingSections(wiki)`**: `.wiki` 内の全見出し（`wiki.querySelectorAll('h1, h2, h3, h4, h5, h6')`、ネスト深さ不問）を文書順に取得し、各見出しについて `document.createRange()` で `setStartAfter(heading)` 〜 `setEndBefore(次の見出し)`（最後の見出しは `setEnd(wiki, wiki.childNodes.length)`）の範囲を `cloneContents()` で切り出す。`Range` は開始・終了点が異なる深さの祖先にまたがっていても正確に境界を処理してくれるため、`.wiki` 直下の子要素だけでなく `<blockquote>` 内などにネストされた見出し（CommonMark 上 `> # 見出し` は文法上有効）も見落とさない。切り出した内容には `getBodyText` と同じ `EXCLUDED_SELECTORS` + `extractTextWithBlockBreaks` を適用する。テスト用に `export` している。
 
 - **`aggregateHeadingCounts(headings)`**（`src/headingCounts.ts`）: 見出しレベルの配列からスタックで親子関係を求め、文書順の逆順に集計することで「自身 + 配下すべて」を多段ネストでも正しく積み上げる純粋関数。同階層の兄弟見出しは互いのカウントを含まず、共通の祖先にのみ加算される。DOM に依存しないため `headingCounts.test.ts` で直接単体テストしている。
 

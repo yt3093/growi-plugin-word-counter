@@ -323,6 +323,24 @@ describe('collectHeadingSections', () => {
     const wiki = setBody('<p>no headings here</p>');
     expect(collectHeadingSections(wiki)).toEqual([]);
   });
+
+  it('detects a heading nested inside a blockquote (CommonMark "> # heading" is valid) and still finds its own content', () => {
+    const wiki = setBody('<blockquote><h2>Nested</h2><p>inside quote</p></blockquote><p>after quote</p>');
+    const sections = collectHeadingSections(wiki);
+    expect(sections).toHaveLength(1);
+    expect(sections[0]).toMatchObject({ level: 2, ownText: 'inside quote\nafter quote' });
+  });
+
+  it('correctly bounds a section when the next heading is nested at a different depth than the current one', () => {
+    // 1つ目の見出しは blockquote の中、2つ目は直下（ネスト深さが異なる境界）
+    const wiki = setBody(
+      '<blockquote><h2>First</h2><p>quoted text</p></blockquote><h2>Second</h2><p>plain text</p>',
+    );
+    const sections = collectHeadingSections(wiki);
+    expect(sections).toHaveLength(2);
+    expect(sections[0]).toMatchObject({ level: 2, ownText: 'quoted text' });
+    expect(sections[1]).toMatchObject({ level: 2, ownText: 'plain text' });
+  });
 });
 
 describe('createWordCounter heading badges (integration)', () => {
@@ -344,6 +362,22 @@ describe('createWordCounter heading badges (integration)', () => {
     expect(document.querySelector('.gpwc-heading-badge')).toBeNull();
 
     counter.unmount();
+  });
+
+  it('warns (but does not throw) and renders no badges when the marker has an invalid metric value', () => {
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    document.body.innerHTML =
+      '<div class="wiki">' + headingCountMarker('bogus') + '<h1>Title</h1><p>hello world</p></div>';
+    const counter = createWordCounter();
+    expect(() => counter.mount()).not.toThrow();
+
+    expect(document.querySelector('.gpwc-heading-badge')).toBeNull();
+    expect(consoleWarnSpy).toHaveBeenCalledOnce();
+    expect(consoleWarnSpy.mock.calls[0][0]).toContain('[growi-plugin-word-counter]');
+    expect(consoleWarnSpy.mock.calls[0][0]).toContain('bogus');
+
+    counter.unmount();
+    consoleWarnSpy.mockRestore();
   });
 
   it('renders heading badges with own/total counts when the "chars" marker is present', () => {

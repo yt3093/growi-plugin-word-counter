@@ -354,10 +354,19 @@ const findHeadingCountMetric = (wiki: HTMLElement): HeadingCountMetric | null =>
   const value = citeText.slice(separatorIndex + 1).trim();
   if (namespace !== HEADING_COUNT_NAMESPACE) return null;
 
-  return (VALID_HEADING_METRICS as readonly string[]).includes(value) ? (value as HeadingCountMetric) : null;
+  if ((VALID_HEADING_METRICS as readonly string[]).includes(value)) {
+    return value as HeadingCountMetric;
+  }
+
+  // マーカー自体は見つかっている（namespace は一致）のに値が無効なケース。
+  // マーカーが無いだけの「機能オフ」（正常な沈黙）と区別できるよう警告を出す。
+  console.warn(
+    `${LOG_PREFIX} invalid heading count metric "${value}". Expected one of: ${VALID_HEADING_METRICS.join(', ')}.`,
+  );
+  return null;
 };
 
-const HEADING_TAG_RE = /^H[1-6]$/;
+const HEADING_SELECTOR = 'h1, h2, h3, h4, h5, h6';
 
 interface HeadingSection {
   element: HTMLElement;
@@ -366,24 +375,33 @@ interface HeadingSection {
 }
 
 /**
- * `.wiki` 直下の子要素を見出し境界で区切り、各見出しの「自身の内容」
+ * `.wiki` 内のすべての見出しを文書順に取得し、各見出しの「自身の内容」
  * （その見出しの直後から次の見出しの直前まで。見出しタイトル自体のテキストは含まない）を
  * 抽出する。`getBodyText` と同じく `EXCLUDED_SELECTORS` と `extractTextWithBlockBreaks` を使う。
+ *
+ * `.wiki` 直下の子要素だけでなく、`<blockquote>` 内などにネストされた見出し
+ * （CommonMark 上は `> # 見出し` のように文法上可能）も見落とさないよう、
+ * `querySelectorAll` で全深さの見出しを対象にし、`Range` API で境界を切り出す。
+ * `Range.cloneContents()` は開始/終了点が異なる深さの祖先にまたがっていても、
+ * 必要な祖先要素だけを残して正確にクローンしてくれる。
  */
 export const collectHeadingSections = (wiki: HTMLElement): HeadingSection[] => {
-  const children = Array.from(wiki.children) as HTMLElement[];
-  const headingIndices: number[] = [];
-  children.forEach((el, i) => {
-    if (HEADING_TAG_RE.test(el.tagName)) headingIndices.push(i);
-  });
+  const headings = Array.from(wiki.querySelectorAll<HTMLElement>(HEADING_SELECTOR));
 
-  return headingIndices.map((startIdx, i) => {
-    const heading = children[startIdx];
+  return headings.map((heading, i) => {
     const level = Number(heading.tagName.slice(1));
-    const endIdx = i + 1 < headingIndices.length ? headingIndices[i + 1] : children.length;
+    const nextHeading = headings[i + 1];
+
+    const range = document.createRange();
+    range.setStartAfter(heading);
+    if (nextHeading) {
+      range.setEndBefore(nextHeading);
+    } else {
+      range.setEnd(wiki, wiki.childNodes.length);
+    }
 
     const container = document.createElement('div');
-    children.slice(startIdx + 1, endIdx).forEach((node) => container.appendChild(node.cloneNode(true)));
+    container.appendChild(range.cloneContents());
     EXCLUDED_SELECTORS.forEach((selector) => {
       container.querySelectorAll(selector).forEach((el) => el.remove());
     });
