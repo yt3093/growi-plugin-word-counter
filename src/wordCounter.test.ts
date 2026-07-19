@@ -1,10 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createWordCounter, extractTextWithBlockBreaks, getBodyText, isHiddenContext } from './wordCounter';
+import {
+  collectHeadingSections,
+  createWordCounter,
+  extractTextWithBlockBreaks,
+  getBodyText,
+  isHiddenContext,
+} from './wordCounter';
 
 const setBody = (html: string): HTMLElement => {
   document.body.innerHTML = `<div class="wiki">${html}</div>`;
   return document.querySelector('.wiki') as HTMLElement;
 };
+
+// 実機で確認できた ```gpwc-headings:chars フェンスの DOM（要点のみ簡略化）。
+// GROWI は "gpwc-headings" をハイフンで区切り <code class="language-gpwc"> にし、
+// 残りの "headings:chars" をまるごと <cite class="code-highlighted-title"> に出力する。
+const headingCountMarker = (value: string): string =>
+  `<pre><cite class="code-highlighted-title">headings:${value}</cite><div><code class="language-gpwc"></code></div></pre>`;
 
 describe('extractTextWithBlockBreaks', () => {
   it('separates adjacent block elements with no real whitespace between tags (compact HTML)', () => {
@@ -272,5 +284,162 @@ describe('createWordCounter (integration)', () => {
     counter.unmount();
     cloneNodeSpy.mockRestore();
     consoleErrorSpy.mockRestore();
+  });
+});
+
+describe('collectHeadingSections', () => {
+  it('extracts each heading\'s own content up to (but not including) the next heading', () => {
+    const wiki = setBody(
+      '<h1>Title</h1><p>intro</p><h2>Background</h2><p>bg text</p><h3>Detail</h3><p>detail text</p>',
+    );
+    const sections = collectHeadingSections(wiki);
+    expect(sections).toHaveLength(3);
+    expect(sections[0]).toMatchObject({ level: 1, ownText: 'intro' });
+    expect(sections[1]).toMatchObject({ level: 2, ownText: 'bg text' });
+    expect(sections[2]).toMatchObject({ level: 3, ownText: 'detail text' });
+  });
+
+  it('does not include the heading\'s own title text in ownText', () => {
+    const wiki = setBody('<h1>Title Text</h1><p>body</p>');
+    const sections = collectHeadingSections(wiki);
+    expect(sections[0].ownText).not.toContain('Title Text');
+    expect(sections[0].ownText).toBe('body');
+  });
+
+  it('a heading immediately followed by another heading has empty own content', () => {
+    const wiki = setBody('<h1>A</h1><h2>B</h2><p>only b content</p>');
+    const sections = collectHeadingSections(wiki);
+    expect(sections[0].ownText).toBe('');
+    expect(sections[1].ownText).toBe('only b content');
+  });
+
+  it('applies the same EXCLUDED_SELECTORS as the main widget (e.g. code blocks)', () => {
+    const wiki = setBody('<h1>Title</h1><p>keep</p><pre><code>excluded</code></pre>');
+    const sections = collectHeadingSections(wiki);
+    expect(sections[0].ownText).toBe('keep');
+  });
+
+  it('returns an empty array when there are no headings', () => {
+    const wiki = setBody('<p>no headings here</p>');
+    expect(collectHeadingSections(wiki)).toEqual([]);
+  });
+});
+
+describe('createWordCounter heading badges (integration)', () => {
+  beforeEach(() => {
+    window.history.pushState({}, '', '/');
+    document.body.className = '';
+    document.body.innerHTML = '';
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('does not render heading badges when the opt-in marker is absent', () => {
+    document.body.innerHTML = '<div class="wiki"><h1>Title</h1><p>hello world</p></div>';
+    const counter = createWordCounter();
+    counter.mount();
+
+    expect(document.querySelector('.gpwc-heading-badge')).toBeNull();
+
+    counter.unmount();
+  });
+
+  it('renders heading badges with own/total counts when the "chars" marker is present', () => {
+    // h1 own="intro" (5) + h2 own="bg text" (7, incl. space) => h1 total = 12
+    document.body.innerHTML =
+      '<div class="wiki">' +
+      headingCountMarker('chars') +
+      '<h1>Title</h1><p>intro</p><h2>Background</h2><p>bg text</p></div>';
+    const counter = createWordCounter();
+    counter.mount();
+
+    const badges = document.querySelectorAll('.gpwc-heading-badge-text');
+    expect(badges).toHaveLength(2);
+    expect(badges[0].textContent).toBe('5/12');
+    expect(badges[1].textContent).toBe('7');
+
+    counter.unmount();
+  });
+
+  it('uses the word count metric when the "words" marker is present', () => {
+    document.body.innerHTML =
+      '<div class="wiki">' + headingCountMarker('words') + '<h1>Title</h1><p>this is four words</p></div>';
+    const counter = createWordCounter();
+    counter.mount();
+
+    const badgeText = document.querySelector('.gpwc-heading-badge-text');
+    expect(badgeText?.textContent).toBe('4');
+
+    counter.unmount();
+  });
+
+  it('hides the marker code block itself', () => {
+    document.body.innerHTML =
+      '<div class="wiki">' + headingCountMarker('chars') + '<h1>Title</h1><p>intro</p></div>';
+    const counter = createWordCounter();
+    counter.mount();
+
+    const marker = document.querySelector('pre');
+    expect(marker?.classList.contains('gpwc-heading-count-marker')).toBe(true);
+
+    counter.unmount();
+  });
+
+  it('does not let badge text leak into the main page-wide widget count', () => {
+    document.body.innerHTML =
+      '<div class="wiki">' + headingCountMarker('chars') + '<h1>Title</h1><p>intro</p></div>';
+    const counter = createWordCounter();
+    counter.mount();
+
+    // 本文全体ウィジェットの対象は "Title"（見出しタイトル） + "intro"（本文）の11字。
+    // 見出しバッジ自身のテキスト（"5/5" 等）が混入して数値がズレていないことを確認する。
+    const widgetText = document.querySelector('.gpwc-widget')?.textContent ?? '';
+    expect(widgetText).toContain('11 chars');
+
+    counter.unmount();
+  });
+
+  it('removes stale badges and rebuilds them when content changes across scans', () => {
+    document.body.innerHTML =
+      '<div class="wiki">' + headingCountMarker('chars') + '<h1>Title</h1><p>intro</p></div>';
+    const counter = createWordCounter();
+    counter.mount();
+    expect(document.querySelectorAll('.gpwc-heading-badge')).toHaveLength(1);
+
+    // 再スキャンを直接発火させて重複挿入されないことを確認
+    const wiki = document.querySelector('.wiki') as HTMLElement;
+    wiki.querySelector('h1')!.insertAdjacentHTML('afterend', '<h2>New</h2><p>added</p>');
+    // scanAndEnhance は非公開なので、update 経路を直接叩けるよう unmount→mount で強制再評価する
+    counter.unmount();
+    counter.mount();
+
+    expect(document.querySelectorAll('.gpwc-heading-badge')).toHaveLength(2);
+
+    counter.unmount();
+  });
+
+  it('suppresses heading badges when data-no-wordcount is set', () => {
+    document.body.innerHTML =
+      '<div class="wiki" data-no-wordcount>' + headingCountMarker('chars') + '<h1>Title</h1><p>intro</p></div>';
+    const counter = createWordCounter();
+    counter.mount();
+
+    expect(document.querySelector('.gpwc-heading-badge')).toBeNull();
+
+    counter.unmount();
+  });
+
+  it('fully removes badges and unhides the marker on unmount', () => {
+    document.body.innerHTML =
+      '<div class="wiki">' + headingCountMarker('chars') + '<h1>Title</h1><p>intro</p></div>';
+    const counter = createWordCounter();
+    counter.mount();
+
+    counter.unmount();
+
+    expect(document.querySelector('.gpwc-heading-badge')).toBeNull();
+    expect(document.querySelector('.gpwc-heading-count-marker')).toBeNull();
   });
 });

@@ -4,9 +4,9 @@
 
 - **名前**: `growi-plugin-word-counter`
 - **種別**: GROWI Script プラグイン
-- **目的**: GROWI ページ本文（閲覧モード）の先頭に文字数・単語数・読了時間などの統計情報を、背景・枠線のないミニマルなウィジェットで表示する
+- **目的**: GROWI ページ本文（閲覧モード）の先頭に文字数・単語数・読了時間などの統計情報を、背景・枠線のないミニマルなウィジェットで表示する。加えて、オプトインのコードフェンスを埋め込むと見出し（h1〜h6）単位のカウントもインラインで表示できる
 
-### 実装済み機能（フェーズ1）
+### 実装済み機能（フェーズ1: ページ全体ウィジェット）
 
 | 機能 | 説明 |
 |---|---|
@@ -35,6 +35,18 @@
 | ダークモード | `@media (prefers-color-scheme: dark)` と `html[data-bs-theme="dark"]`（Bootstrap 5.3 GROWI UI トグル）の双方で CSS 変数を上書き |
 | 印刷最適化 | `@media print` でウィジェット非表示 |
 
+### 実装済み機能（フェーズ2: 見出し単位カウント・オプトイン）
+
+| 機能 | 説明 |
+|---|---|
+| オプトインの埋め込みタグ | ページ本文のどこかに ` ```gpwc-headings:chars ` のようなコードフェンスを1つ埋め込むと、そのページの全見出し（h1〜h6）にカウントバッジが表示される。値は `chars` / `chars-no-space` / `words` のいずれか1つを選択（`countWords` と同じロジックを使い分ける）。埋め込みが無いページでは何も表示されない（デフォルト無効）。マーカーのコードフェンス自体は `pre` 除外により本文カウントにも混入せず、見た目にも `.gpwc-heading-count-marker` クラスで非表示にする |
+| GROWI コアのフェンス解析挙動（実機確認済み・注意） | `` ```gpwc-headings:chars `` は GROWI 本体の言語:ファイル名パーサーによって**コロンではなくハイフンの位置**で区切られ、`<code class="language-gpwc">` + `<cite class="code-highlighted-title">headings:chars</cite>` という構造になる（一般的な `言語:ファイル名` のコロン分割ではない、GROWI 固有の挙動）。`findHeadingCountMetric` は `code[class*="language-gpwc"]` を起点に検出し、`<cite>` のテキストを `"headings:" + 値` の形式としてパースする |
+| 見出し単位の本文抽出 | `collectHeadingSections(wiki)` が `.wiki` の直下の子要素を見出し境界で区切り、各見出しの「自身の内容」（その見出し直後から次の見出し直前まで。見出しタイトル自体は含まない）を `getBodyText` と同じ `EXCLUDED_SELECTORS` + `extractTextWithBlockBreaks` で抽出する |
+| 階層集計ロジック | `aggregateHeadingCounts`（`src/headingCounts.ts`、DOM 非依存の純粋関数）が見出しレベルに基づくスタック走査で親子関係を求め、文書順の逆順に集計することで多段ネストも正しく積み上げる。子を持つ見出しは「自身/配下すべて合計」、末端見出し（子なし）は自身のみを表示する。同階層の兄弟見出し同士は互いのカウントを含まない（共通の祖先にのみ加算） |
+| 見出しバッジの表示 | 各見出し要素の末尾に `<span class="gpwc-heading-badge">` を追加。ページ全体ウィジェットと同じ `createSvgIcon` の白抜きバッジアイコン（`chars`=太字「A」、`chars-no-space`=内向き矢印、`words`=吹き出し）を指標に応じて使い回す。子を持つ見出しは `自身/合計`、末端見出しは `自身` のみを表示（分母なし） |
+| 自己参照除外 | 見出しバッジ自身のテキスト（`"6/9"` 等）はページ全体ウィジェットのカウント・見出しごとのカウントいずれにも混入しないよう `EXCLUDED_SELECTORS` に `.gpwc-heading-badge` を追加している。また `isSelfInjected` にも `.gpwc-heading-badge` を追加し、バッジの挿入/再構築自体が MutationObserver の無限ループを起こさないようにしている |
+| ライフサイクル統合 | `data-no-wordcount` によるオプトアウト・`isHiddenContext()` による非表示条件・`unmount()` による完全復元は、ページ全体ウィジェットと同じ条件で見出しバッジにも適用される（`cleanupHeadingBadges` / `cleanupAll` 内のバッジ・マーカー非表示クラスの除去） |
+
 ### 未実装（将来フェーズ）
 
 - 選択範囲のみのカウント（現状は本文全体のみが対象）
@@ -59,10 +71,12 @@
 growi-plugin-word-counter/
 ├── client-entry.tsx                # activate / deactivate + pluginActivators 登録
 ├── src/
-│   ├── wordCounter.ts              # コア実装（スキャン・ウィジェット注入・SPA 遷移・クリーンアップ）
+│   ├── wordCounter.ts              # コア実装（スキャン・ウィジェット注入・見出しバッジ・SPA 遷移・クリーンアップ）
 │   ├── wordCounter.test.ts         # wordCounter.ts の Vitest テスト
 │   ├── stats.ts                    # computeStats(text) 純粋関数
 │   ├── stats.test.ts               # stats.ts の Vitest テスト
+│   ├── headingCounts.ts            # aggregateHeadingCounts(headings) 純粋関数（見出し階層集計）
+│   ├── headingCounts.test.ts       # headingCounts.ts の Vitest テスト
 │   ├── types.ts                    # 共有型定義（PageStats / SvgShapeDef / Window.pluginActivators）
 │   └── styles/wordCounter.css      # ウィジェットスタイル・ダークモード・@media print
 ├── package.json
@@ -86,7 +100,7 @@ growi-plugin-word-counter/
 
 - **`getMainWiki()`**: `document.querySelector(WIKI_SELECTOR)`（`WIKI_SELECTOR = '.wiki:not(.comment)'`）で本文要素を取得。コメント本文も `.wiki` クラスを持つ（`<div class="wiki comment">`）ため `:not(.comment)` で明示的に除外し、DOM 順に依存せず本文側だけを選ぶ。
 
-- **`getBodyText(wiki)`**: `wiki.cloneNode(true)` した clone から、自身のウィジェット（`:scope > .gpwc-widget`）と `EXCLUDED_SELECTORS`（`pre` / `.drawio-viewer` / `.katex` / `.revision-head-link` / `.material-symbols-outlined` / `[data-footnote-ref]` / `[data-footnote-backref]`）に該当する要素を `remove()` してから `extractTextWithBlockBreaks(clone)` でテキストを収集する（元の DOM には触れない）。
+- **`getBodyText(wiki)`**: `wiki.cloneNode(true)` した clone から、自身のウィジェット（`:scope > .gpwc-widget`）と `EXCLUDED_SELECTORS`（`pre` / `.drawio-viewer` / `.katex` / `.revision-head-link` / `.material-symbols-outlined` / `[data-footnote-ref]` / `[data-footnote-backref]` / `.gpwc-heading-badge`）に該当する要素を `remove()` してから `extractTextWithBlockBreaks(clone)` でテキストを収集する（元の DOM には触れない）。
 
 - **`extractTextWithBlockBreaks(root)`**: `root.childNodes` を再帰的に walk し、テキストノードは `textContent` をそのまま集める。要素ノードは子を先に walk してから、`BLOCK_TAGS`（`p`/`div`/`li`/`h1`-`h6`/`table` 系/`br` 等）に該当するタグであれば末尾に `'\n'` を追加する。これにより `<h2>見出し</h2><p>本文</p>` のような隣接ブロック要素の境界にも区切りが入り、単純な `textContent` 結合で単語が誤って連結される問題を防ぐ。最後に `.replace(/\s*\n\s*/g, '\n').trim()` で、改行を含む空白の連続をブロック境界1つにつき改行1文字へ正規化し、先頭・末尾の余分な空白も除去する（GROWI 自身がタグ間に出力する整形用の改行と、ここで挿入した区切りの `\n` が重なって二重カウントされるのを防ぐため）。
 
@@ -104,11 +118,19 @@ growi-plugin-word-counter/
 
 - **`updateWiki(wiki)`**: 既存ウィジェットを新しいウィジェットで `replaceWith()`（DOM 再計算のたびに作り直す。差分更新はしない）。
 
-- **`cleanupWiki(wiki)` / `cleanupAll()`**: ウィジェットを `remove()` し `data-gpwc-enhanced` を削除。`cleanupAll()` はページ上の全 `.gpwc-widget` を対象にする（`unmount()` と非表示コンテキスト遷移時の両方で使用）。
+- **`cleanupWiki(wiki)` / `cleanupAll()`**: ウィジェットを `remove()` し `data-gpwc-enhanced` を削除。`cleanupAll()` はページ上の全 `.gpwc-widget` に加え、全 `.gpwc-heading-badge` と `.gpwc-heading-count-marker`（見出しカウントのオプトインマーカーの非表示クラス）も削除・解除する（`unmount()` と非表示コンテキスト遷移時の両方で使用）。
+
+- **`findHeadingCountMetric(wiki)`**: 見出しカウント機能のオプトインマーカーを検出する。`code[class*="language-gpwc"]` を起点に、対応する `<pre>` に `gpwc-heading-count-marker` クラスを付与して非表示にし、`<cite class="code-highlighted-title">` のテキストを取得する。GROWI コアのフェンス解析は ` ```gpwc-headings:chars ` を**コロンではなくハイフンの位置**で区切るため、`<cite>` には `"headings:chars"` のように名前空間とコロンを含む文字列がまるごと入る（実機確認済み）。`"headings:"` プレフィックスを検証してから値を取り出し、`chars` / `chars-no-space` / `words` のいずれでもなければ無効として扱う。
+
+- **`collectHeadingSections(wiki)`**: `.wiki` 直下の子要素を見出し（h1〜h6）の出現位置で区切り、各見出しの「自身の内容」（その見出し直後から次の見出し直前まで、見出しタイトル自体は含まない）を、`getBodyText` と同じ `EXCLUDED_SELECTORS` + `extractTextWithBlockBreaks` で抽出する。テスト用に `export` している。
+
+- **`aggregateHeadingCounts(headings)`**（`src/headingCounts.ts`）: 見出しレベルの配列からスタックで親子関係を求め、文書順の逆順に集計することで「自身 + 配下すべて」を多段ネストでも正しく積み上げる純粋関数。同階層の兄弟見出しは互いのカウントを含まず、共通の祖先にのみ加算される。DOM に依存しないため `headingCounts.test.ts` で直接単体テストしている。
+
+- **`buildHeadingBadge(result, metric)` / `updateHeadingBadges(wiki)` / `cleanupHeadingBadges(wiki)`**: 指標に応じたアイコン（`HEADING_METRIC_ICONS`、ページ全体ウィジェットと同じ `createSvgIcon`/`ICON_*` を再利用）と `自身/合計`（子を持つ場合）または `自身` のみ（末端の場合）のテキストからバッジを組み立てる。`updateHeadingBadges` は毎回 `cleanupHeadingBadges` で既存バッジを全削除してから作り直す（差分更新はしない。増減した見出しにも追従するため）。
 
 - **SPA 遷移検知**: `pushState` / `replaceState` にカスタムイベント `growi-pwc-navigate` をディスパッチするモンキーパッチ。`popstate` / `hashchange` も購読し、いずれも `scheduleScan()`（2 段 `requestAnimationFrame` で DOM 安定後に `scanAndEnhance()`）を呼ぶ。
 
-- **MutationObserver**: `document.body` を `childList: true, subtree: true, attributes: true, attributeFilter: ['class']` で監視。`attributes` タイプの mutation は `target === document.body` の場合のみ関心対象とする（編集モード遷移など body クラス変化の検知）。`childList` タイプの mutation は `isWikiRelatedMutation(mutation, wiki)` で `.wiki` 内部の変更か `.wiki` 自体の追加/削除かを判定し、無関係なら（ヘッダー通知バッジ・サイドバー等）スキップする。関心対象と判定されたものについてさらに `isSelfInjected(node)`（`.gpwc-widget` クラス判定）で自己注入ノードのみの追加/削除を除外し、無限ループを防止。最終的に関心対象の mutation があれば `isHiddenContext()` を判定し、true なら `cleanupAll()`、false なら `scheduleScan()`。
+- **MutationObserver**: `document.body` を `childList: true, subtree: true, attributes: true, attributeFilter: ['class']` で監視。`attributes` タイプの mutation は `target === document.body` の場合のみ関心対象とする（編集モード遷移など body クラス変化の検知）。`childList` タイプの mutation は `isWikiRelatedMutation(mutation, wiki)` で `.wiki` 内部の変更か `.wiki` 自体の追加/削除かを判定し、無関係なら（ヘッダー通知バッジ・サイドバー等）スキップする。関心対象と判定されたものについてさらに `isSelfInjected(node)`（`.gpwc-widget` / `.gpwc-heading-badge` クラス判定）で自己注入ノードのみの追加/削除を除外し、無限ループを防止。最終的に関心対象の mutation があれば `isHiddenContext()` を判定し、true なら `cleanupAll()`、false なら `scheduleScan()`。
 
 - **`isWikiRelatedMutation(mutation, wiki)`**: `wiki.contains(mutation.target)` なら `.wiki` 内部の変更として true。それ以外は `mutation.addedNodes` / `removedNodes` に `.wiki` 自身またはその子孫を含む要素（`nodeIsOrContainsWiki`）があるかを見て、`.wiki` 自体が丸ごと追加/削除されたケース（例: SPA 遷移で GROWI が本文コンテナごと差し替える場合）も relevant と判定する。
 
@@ -131,6 +153,10 @@ growi-plugin-word-counter/
 | セグメント内ラベルテキストクラス | `gpwc-seg-text` |
 | pluginActivators キー | `growi-plugin-word-counter` |
 | コンソールログ prefix | `[growi-plugin-word-counter]`（`LOG_PREFIX`） |
+| 見出しカウントのオプトインタグ | ` ```gpwc-headings:値 `（値は `chars` / `chars-no-space` / `words`） |
+| 見出しバッジクラス | `gpwc-heading-badge` |
+| 見出しバッジ内テキストクラス | `gpwc-heading-badge-text` |
+| 見出しカウントマーカー非表示クラス | `gpwc-heading-count-marker` |
 
 ## ハマりどころ（必読・GROWI プラグイン共通）
 
@@ -187,15 +213,25 @@ GROWI はコメントの本文も `<div class="page-comment-body"><div class="wi
 
 コメント側の `.wiki` には `comment` という追加クラスが付くため、`WIKI_SELECTOR` を `.wiki:not(.comment)` として明示的に除外し、DOM 順に依存しない実装にしている。他の副次的な `.wiki`（今後 GROWI が追加する可能性のある機能）が見つかった場合も、同様に追加クラスでの除外を検討すること。
 
+### 11. GROWI コアのコードフェンス「言語:ファイル名」解析はコロンではなくハイフンで区切られることがある
+
+姉妹プロジェクト `growi-plugin-codeblock-extended` の調査では「GROWI のコードフェンスパーサーは `:` をセパレータとして `言語:ファイル名` を処理する」と記録されていたが、これはあくまで**言語部分が実在の言語として認識できる場合の挙動**だった可能性が高い。
+
+本プロジェクトで見出しカウント機能のオプトインマーカーとして ` ```gpwc-headings:chars ` というフェンスを実機で試したところ、`gpwc-headings` という（実在しない）言語名は**ハイフンの位置で区切られ**、`<code class="language-gpwc">` となった。一方コロン以降を含む残り全体（`headings:chars`）は分割されずに `<cite class="code-highlighted-title">headings:chars</cite>` へまるごと出力された。
+
+この挙動を逆手に取り、`code[class*="language-gpwc"]` を検出の起点にし、`<cite>` のテキストを `"名前空間:値"` として自前でパースする実装にしている（`findHeadingCountMetric`）。**GROWI 本体のフェンス解析はコロン区切りだけでなくハイフンの影響も受ける**ことが実機で確認できたため、同様に `言語:ファイル名` 記法を利用した新機能を追加する際は、想定通りの区切り方になるか改めて実機確認すること。
+
 ## テスト
 
-`pnpm test`（Vitest, `environment: 'jsdom'`）で `src/stats.test.ts` / `src/wordCounter.test.ts` を実行する。`pnpm test:watch` でウォッチモード。
+`pnpm test`（Vitest, `environment: 'jsdom'`）で `src/stats.test.ts` / `src/wordCounter.test.ts` / `src/headingCounts.test.ts` を実行する。`pnpm test:watch` でウォッチモード。
 
 **このテストスイートを作った経緯**: 実装初期は `stats.ts`/`extractTextWithBlockBreaks`/アイコン生成のロジックを都度 `.tmp-*.cjs` のような使い捨てスクリプトにコピー&ペーストして `jsdom` で手動検証していた。この方式は**実装本体と検証コードが別物になり、コピーが実装からズレても気づけない**という弱点があったため、Vitest で本体を直接 `import` する恒久的なテストに置き換えた。
 
-- **`extractTextWithBlockBreaks` / `getBodyText` / `isHiddenContext`**（`src/wordCounter.ts`）: テストから直接 `import` するために `export` を付与している。`client-entry.tsx` は `createWordCounter` のみを使うため、この export はビルド成果物（`dist/`）のサイズ・内容に影響しない（Vite が未使用 export を tree-shake する）。
+- **`extractTextWithBlockBreaks` / `getBodyText` / `isHiddenContext` / `collectHeadingSections`**（`src/wordCounter.ts`）: テストから直接 `import` するために `export` を付与している。`client-entry.tsx` は `createWordCounter` のみを使うため、この export はビルド成果物（`dist/`）のサイズ・内容に影響しない（Vite が未使用 export を tree-shake する）。
 - **`wordCounter.test.ts`** には、この会話で実機の DOM から発見した回帰ケース（GROWI の見出しパーマリンク・見出し/表の編集ボタンのアイコンリガチャ・`<blockquote>\n<p>a</p>\n</blockquote>` の改行二重カウント等）をそのまま固定のテストケースとして含めている。今後 `EXCLUDED_SELECTORS` や `extractTextWithBlockBreaks` を変更する際は、まずこれらのテストを通すこと。
 - **`createWordCounter()` の統合テスト**は同期的に検証できる範囲（初回 `mount()`・`data-no-wordcount`・非表示コンテキスト・`unmount()` の完全復元）のみをカバーしている。`pushState`/`hashchange` 経由の非同期再スキャン（`requestAnimationFrame` 2 段待ち）は今回のスコープでは未カバー（フェイクタイマー等の追加セットアップが必要なため）。
+- **`headingCounts.test.ts`** はユーザー提示の2つの検証例（`h1:5/h2:6/h3:3` → `5/14, 6/9, 3` と、兄弟見出し `h1:5/h2①:3/h2②:2` → `5/10, 3, 2`）をそのままテストケース化している。`aggregateHeadingCounts` は DOM に依存しない純粋関数なので、見出しレベルの組み合わせパターン（レベルの飛び・複数の最上位見出し・深いネスト等）を直接・高速に検証できる。
+- **テストの落とし穴（この会話で実際に踏んだもの）**: 統合テストの `it()` 内で `expect` が失敗すると、その行より後ろの `counter.unmount()` に到達できず、`history.pushState` の監視パッチが元に戻らないまま次のテストに進んでしまう。`createWordCounter()` は `originalPushState` 等をモジュールスコープの共有状態として持つ設計のため、後続のテストで無関係な `TypeError: originalPushState is not a function` が連鎖的に発生する（実際に発生した）。統合テストを書く際は `mount()`/`unmount()` の対応漏れがないか、アサーションの正しさを先に確認すること。
 
 ## デプロイ手順
 
@@ -231,6 +267,15 @@ GROWI 管理画面 `/admin/plugins` で **削除 → 再インストール**。
 16. 脚注（footnote）があるページで、参照マーカーの数字・脚注一覧末尾の「↩」がカウントに含まれず、脚注の内容テキストはカウントに含まれる
 17. mermaid・PlantUML 図・drawio 図があるページで、図中のラベルテキストがカウントに混入しない
 18. 添付ファイル（画像等）のプレビューがあるページで、ファイル名がカウントに混入しない
+19. ` ```gpwc-headings:chars ` を埋め込んでいないページでは見出しバッジが表示されない（デフォルト無効）
+20. ` ```gpwc-headings:chars ` を埋め込んだページで、全見出し（h1〜h6）の隣にバッジが表示される
+21. マーカーのコードフェンス自体が見た目に表示されない（`.gpwc-heading-count-marker` で非表示）
+22. 子見出しを持つ見出しは `自身/合計`（例: `6/9`）、末端見出しは `自身` のみ（分母なし）で表示される
+23. 兄弟見出し（同階層で複数ある場合）は互いのカウントを含まず、共通の祖先にのみ加算される
+24. `chars` / `chars-no-space` / `words` それぞれの値でマーカーを埋め込み、対応する指標・アイコンで表示される
+25. 見出しバッジのテキスト自体が、ページ全体ウィジェットのカウント・他の見出しの自身カウントいずれにも混入しない
+26. `.wiki` に `data-no-wordcount` を付与すると見出しバッジも表示されない
+27. プラグイン無効化（`unmount`）で見出しバッジとマーカーの非表示クラスが完全に消え、本文 DOM が元通りになる
 
 ## 会話ガイドライン
 

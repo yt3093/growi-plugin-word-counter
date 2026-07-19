@@ -33,8 +33,36 @@
 }
 
 .gpwc-seg-icon-bg {
-  fill: var(--gpwc-icon-bg);
+  /* 見出しバッジ（.gpwc-heading-badge）は .gpwc-widget の外（見出しタグの中）に
+     配置されるため、同じアイコンを流用しても --gpwc-icon-bg 変数が届かない。
+     フォールバック値を指定し、どちらの文脈でも同じ色で描画されるようにする。 */
+  fill: var(--gpwc-icon-bg, rgba(71, 85, 105, 0.9));
   stroke: none;
+}
+
+/* 見出しごとのカウントバッジ（オプトイン機能）。見出しタグ自身の子要素として挿入されるため
+   .gpwc-widget のスコープ外にあり、色はテーマに関わらず opacity で控えめに見せる。 */
+.gpwc-heading-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  margin-left: 0.6em;
+  font-size: 0.55em;
+  font-weight: 400;
+  vertical-align: middle;
+  opacity: 0.6;
+  user-select: none;
+}
+
+.gpwc-heading-badge .gpwc-seg-icon {
+  width: 1.2em;
+  height: 1.2em;
+  flex-shrink: 0;
+}
+
+/* 見出しカウント機能のオプトインマーカー（空のコードブロック）を非表示にする。 */
+.gpwc-heading-count-marker {
+  display: none;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -50,7 +78,8 @@ html[data-bs-theme='dark'] .gpwc-widget {
 }
 
 @media print {
-  .gpwc-widget {
+  .gpwc-widget,
+  .gpwc-heading-badge {
     display: none;
   }
 }

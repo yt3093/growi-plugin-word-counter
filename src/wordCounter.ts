@@ -1,8 +1,11 @@
 import './styles/wordCounter.css';
 import { computeStats } from './stats';
+import { aggregateHeadingCounts } from './headingCounts';
+import type { HeadingCountInput, HeadingCountMetric, HeadingCountResult } from './headingCounts';
 import type { PageStats, SvgShapeDef } from './types';
 
 const WIDGET_CLASS = 'gpwc-widget';
+const HEADING_BADGE_CLASS = 'gpwc-heading-badge';
 const ENHANCED_ATTR = 'data-gpwc-enhanced';
 const NO_COUNT_ATTR = 'data-no-wordcount';
 const NAVIGATE_EVENT = 'growi-pwc-navigate';
@@ -54,6 +57,10 @@ const EXCLUDED_SELECTORS = [
   '.material-symbols-outlined',
   '[data-footnote-ref]',
   '[data-footnote-backref]',
+  // 見出しバッジ（後述）自身のテキスト（"6/9" 等）が本文カウントに混入しないよう除外する。
+  // `pre` は既に除外対象のため、見出しカウント機能のオプトイン用マーカー（後述）も
+  // 追加のセレクタなしで自動的にカバーされる。
+  `.${HEADING_BADGE_CLASS}`,
 ];
 
 // UI に表示する指標のフラグ。stats.ts では常に全指標を計算しているため、
@@ -314,12 +321,134 @@ const cleanupWiki = (wiki: HTMLElement): void => {
   wiki.removeAttribute(ENHANCED_ATTR);
 };
 
+// 見出し単位カウント機能のオプトインマーカー。
+// ページ本文に ```gpwc-headings:chars のようなコードフェンスを埋め込むと、その値
+// （chars / chars-no-space / words）に応じて各見出しの隣にバッジを表示する。
+//
+// 実機確認の結果、GROWI 本体のフェンス言語パーサーは "gpwc-headings" をハイフンの位置で
+// 区切り、`<code class="language-gpwc">` として言語クラスに反映する一方、コロン以降を含む
+// 残り全体（例: "headings:chars"）は `<cite class="code-highlighted-title">` にそのまま
+// 出力される（見出しの `<a class="revision-head-link">` 等と違い、コロンでの言語:ファイル名
+// 分割は行われず、ハイフン区切りが優先される挙動だった）。この実機挙動に合わせて、
+// `language-gpwc` を検出の起点にし、`<cite>` のテキストを "headings:" プレフィックスで
+// 判定してから値を取り出す。
+const HEADING_COUNT_LANG_SELECTOR = 'code[class*="language-gpwc"]';
+const HEADING_COUNT_NAMESPACE = 'headings';
+const HEADING_COUNT_HIDE_CLASS = 'gpwc-heading-count-marker';
+const VALID_HEADING_METRICS: readonly HeadingCountMetric[] = ['chars', 'chars-no-space', 'words'];
+
+const findHeadingCountMetric = (wiki: HTMLElement): HeadingCountMetric | null => {
+  const codeEl = wiki.querySelector<HTMLElement>(HEADING_COUNT_LANG_SELECTOR);
+  if (!codeEl) return null;
+
+  // マーカー用のコードブロックは中身が空の設定用ブロックなので、見た目に残らないよう隠す。
+  const pre = codeEl.closest('pre');
+  pre?.classList.add(HEADING_COUNT_HIDE_CLASS);
+
+  const cite = pre?.querySelector<HTMLElement>('cite.code-highlighted-title');
+  const citeText = cite?.textContent?.trim() ?? '';
+  const separatorIndex = citeText.indexOf(':');
+  if (separatorIndex === -1) return null;
+
+  const namespace = citeText.slice(0, separatorIndex).trim();
+  const value = citeText.slice(separatorIndex + 1).trim();
+  if (namespace !== HEADING_COUNT_NAMESPACE) return null;
+
+  return (VALID_HEADING_METRICS as readonly string[]).includes(value) ? (value as HeadingCountMetric) : null;
+};
+
+const HEADING_TAG_RE = /^H[1-6]$/;
+
+interface HeadingSection {
+  element: HTMLElement;
+  level: number;
+  ownText: string;
+}
+
+/**
+ * `.wiki` 直下の子要素を見出し境界で区切り、各見出しの「自身の内容」
+ * （その見出しの直後から次の見出しの直前まで。見出しタイトル自体のテキストは含まない）を
+ * 抽出する。`getBodyText` と同じく `EXCLUDED_SELECTORS` と `extractTextWithBlockBreaks` を使う。
+ */
+export const collectHeadingSections = (wiki: HTMLElement): HeadingSection[] => {
+  const children = Array.from(wiki.children) as HTMLElement[];
+  const headingIndices: number[] = [];
+  children.forEach((el, i) => {
+    if (HEADING_TAG_RE.test(el.tagName)) headingIndices.push(i);
+  });
+
+  return headingIndices.map((startIdx, i) => {
+    const heading = children[startIdx];
+    const level = Number(heading.tagName.slice(1));
+    const endIdx = i + 1 < headingIndices.length ? headingIndices[i + 1] : children.length;
+
+    const container = document.createElement('div');
+    children.slice(startIdx + 1, endIdx).forEach((node) => container.appendChild(node.cloneNode(true)));
+    EXCLUDED_SELECTORS.forEach((selector) => {
+      container.querySelectorAll(selector).forEach((el) => el.remove());
+    });
+
+    return { element: heading, level, ownText: extractTextWithBlockBreaks(container) };
+  });
+};
+
+const pickMetricValue = (stats: PageStats, metric: HeadingCountMetric): number => {
+  if (metric === 'chars') return stats.charsWithSpaces;
+  if (metric === 'chars-no-space') return stats.charsNoSpaces;
+  return stats.words;
+};
+
+const HEADING_METRIC_ICONS: Record<HeadingCountMetric, SvgShapeDef[]> = {
+  chars: ICON_CHARS,
+  'chars-no-space': ICON_CHARS_NO_SPACE,
+  words: ICON_WORDS,
+};
+
+const buildHeadingBadge = (result: HeadingCountResult, metric: HeadingCountMetric): HTMLSpanElement => {
+  const badge = document.createElement('span');
+  badge.className = HEADING_BADGE_CLASS;
+  badge.appendChild(createSvgIcon(HEADING_METRIC_ICONS[metric]));
+
+  const text = document.createElement('span');
+  text.className = 'gpwc-heading-badge-text';
+  text.textContent = result.hasChildren
+    ? `${result.ownCount.toLocaleString()}/${result.totalCount.toLocaleString()}`
+    : result.ownCount.toLocaleString();
+  badge.appendChild(text);
+
+  return badge;
+};
+
+const cleanupHeadingBadges = (wiki: HTMLElement): void => {
+  wiki.querySelectorAll(`.${HEADING_BADGE_CLASS}`).forEach((el) => el.remove());
+};
+
+const updateHeadingBadges = (wiki: HTMLElement): void => {
+  cleanupHeadingBadges(wiki);
+
+  const metric = findHeadingCountMetric(wiki);
+  if (!metric) return;
+
+  const sections = collectHeadingSections(wiki);
+  const inputs: HeadingCountInput[] = sections.map((section) => ({
+    level: section.level,
+    ownCount: pickMetricValue(computeStats(section.ownText), metric),
+  }));
+  const results = aggregateHeadingCounts(inputs);
+
+  sections.forEach((section, i) => {
+    section.element.appendChild(buildHeadingBadge(results[i], metric));
+  });
+};
+
 const cleanupAll = (): void => {
   document.querySelectorAll<HTMLElement>(`.${WIDGET_CLASS}`).forEach((widget) => {
     const parent = widget.parentElement;
     widget.remove();
     parent?.removeAttribute(ENHANCED_ATTR);
   });
+  document.querySelectorAll(`.${HEADING_BADGE_CLASS}`).forEach((el) => el.remove());
+  document.querySelectorAll(`.${HEADING_COUNT_HIDE_CLASS}`).forEach((el) => el.classList.remove(HEADING_COUNT_HIDE_CLASS));
 };
 
 // GROWI 側の想定外の DOM 構造（今後のバージョンアップ等）で getBodyText/computeStats/
@@ -337,6 +466,7 @@ const scanAndEnhance = (): void => {
 
     if (wiki.hasAttribute(NO_COUNT_ATTR)) {
       if (wiki.hasAttribute(ENHANCED_ATTR)) cleanupWiki(wiki);
+      cleanupHeadingBadges(wiki);
       return;
     }
 
@@ -345,6 +475,8 @@ const scanAndEnhance = (): void => {
     } else {
       enhanceWiki(wiki);
     }
+
+    updateHeadingBadges(wiki);
   } catch (error) {
     console.error(`${LOG_PREFIX} failed to update the word count widget`, error);
   }
@@ -362,7 +494,11 @@ const scheduleScan = (): void => {
 };
 
 /** 自分自身が注入したウィジェット由来の mutation かどうか */
-const isSelfInjected = (node: Node): boolean => node instanceof HTMLElement && node.classList.contains(WIDGET_CLASS);
+// 見出しバッジ（HEADING_BADGE_CLASS）も本文ウィジェットと同様に自分自身が注入する要素なので、
+// ここに含めないと MutationObserver が「本文が変化した」と誤検知して再スキャン→バッジ再挿入→
+// 再スキャン…と無限ループする。
+const isSelfInjected = (node: Node): boolean =>
+  node instanceof HTMLElement && (node.classList.contains(WIDGET_CLASS) || node.classList.contains(HEADING_BADGE_CLASS));
 
 /** ノード自身が `.wiki` に一致するか、その子孫に `.wiki` を含むか */
 const nodeIsOrContainsWiki = (node: Node): boolean => {
