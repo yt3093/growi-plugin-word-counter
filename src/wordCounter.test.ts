@@ -380,6 +380,60 @@ describe('createWordCounter heading badges (integration)', () => {
     consoleWarnSpy.mockRestore();
   });
 
+  it('hides badges below the specified max heading level ("chars:h2"), but still aggregates their content into ancestors', () => {
+    document.body.innerHTML =
+      '<div class="wiki">' +
+      headingCountMarker('chars:h2') +
+      '<h1>Title</h1><p>root</p>' +
+      '<h2>Section</h2><p>mid</p>' +
+      '<h3>Sub</h3><p>deep</p>' +
+      '</div>';
+    const counter = createWordCounter();
+    counter.mount();
+
+    const h1 = document.querySelector('h1') as HTMLElement;
+    const h2 = document.querySelector('h2') as HTMLElement;
+    const h3 = document.querySelector('h3') as HTMLElement;
+
+    expect(h1.querySelector('.gpwc-heading-badge')).not.toBeNull();
+    expect(h2.querySelector('.gpwc-heading-badge')).not.toBeNull();
+    // h3 は maxLevel(2) より深いのでバッジは表示されない
+    expect(h3.querySelector('.gpwc-heading-badge')).toBeNull();
+
+    // それでも h1 の合計には h3 の内容（"deep" = 4字）が含まれている
+    // root(4) + mid(3) + deep(4) = 11
+    const h1BadgeText = h1.querySelector('.gpwc-heading-badge-text')?.textContent;
+    expect(h1BadgeText).toBe('4/11');
+
+    counter.unmount();
+  });
+
+  it('shows badges on every level when no level spec is given (backward compatible)', () => {
+    document.body.innerHTML =
+      '<div class="wiki">' + headingCountMarker('chars') + '<h1>A</h1><p>a</p><h2>B</h2><p>b</p></div>';
+    const counter = createWordCounter();
+    counter.mount();
+
+    expect(document.querySelectorAll('.gpwc-heading-badge')).toHaveLength(2);
+
+    counter.unmount();
+  });
+
+  it('warns and renders no badges when the level spec is malformed', () => {
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    document.body.innerHTML =
+      '<div class="wiki">' + headingCountMarker('chars:h9') + '<h1>Title</h1><p>hello world</p></div>';
+    const counter = createWordCounter();
+    expect(() => counter.mount()).not.toThrow();
+
+    expect(document.querySelector('.gpwc-heading-badge')).toBeNull();
+    expect(consoleWarnSpy).toHaveBeenCalledOnce();
+    expect(consoleWarnSpy.mock.calls[0][0]).toContain('h9');
+
+    counter.unmount();
+    consoleWarnSpy.mockRestore();
+  });
+
   it('renders heading badges with own/total counts when the "chars" marker is present', () => {
     // h1 own="intro" (5) + h2 own="bg text" (7, incl. space) => h1 total = 12
     document.body.innerHTML =

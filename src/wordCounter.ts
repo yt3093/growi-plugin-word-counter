@@ -336,8 +336,23 @@ const HEADING_COUNT_LANG_SELECTOR = 'code[class*="language-gpwc"]';
 const HEADING_COUNT_NAMESPACE = 'headings';
 const HEADING_COUNT_HIDE_CLASS = 'gpwc-heading-count-marker';
 const VALID_HEADING_METRICS: readonly HeadingCountMetric[] = ['chars', 'chars-no-space', 'words'];
+// 見出しレベル指定が無い場合のデフォルト（h1〜h6すべて対象）。
+const DEFAULT_MAX_HEADING_LEVEL = 6;
+const HEADING_LEVEL_SPEC_RE = /^h([1-6])$/;
 
-const findHeadingCountMetric = (wiki: HTMLElement): HeadingCountMetric | null => {
+interface HeadingCountConfig {
+  metric: HeadingCountMetric;
+  /** このレベルより深い見出し（数値が大きいレベル）はバッジを表示しない */
+  maxLevel: number;
+}
+
+/**
+ * オプトインマーカーの値を解析する。`chars` のような指標のみの指定に加え、
+ * `chars:h3` のように `:hN`（N=1〜6）を続けると、そのレベルより深い見出しの
+ * バッジ表示を抑制できる（集計自体は変わらず、深い見出しの内容も上位の合計には含まれる。
+ * あくまで「表示」を絞り込むだけ）。
+ */
+const findHeadingCountConfig = (wiki: HTMLElement): HeadingCountConfig | null => {
   const codeEl = wiki.querySelector<HTMLElement>(HEADING_COUNT_LANG_SELECTOR);
   if (!codeEl) return null;
 
@@ -351,19 +366,33 @@ const findHeadingCountMetric = (wiki: HTMLElement): HeadingCountMetric | null =>
   if (separatorIndex === -1) return null;
 
   const namespace = citeText.slice(0, separatorIndex).trim();
-  const value = citeText.slice(separatorIndex + 1).trim();
   if (namespace !== HEADING_COUNT_NAMESPACE) return null;
 
-  if ((VALID_HEADING_METRICS as readonly string[]).includes(value)) {
-    return value as HeadingCountMetric;
+  const [rawMetric, rawLevel] = citeText
+    .slice(separatorIndex + 1)
+    .split(':')
+    .map((part) => part.trim());
+
+  if (!(VALID_HEADING_METRICS as readonly string[]).includes(rawMetric)) {
+    // マーカー自体は見つかっている（namespace は一致）のに値が無効なケース。
+    // マーカーが無いだけの「機能オフ」（正常な沈黙）と区別できるよう警告を出す。
+    console.warn(
+      `${LOG_PREFIX} invalid heading count metric "${rawMetric}". Expected one of: ${VALID_HEADING_METRICS.join(', ')}.`,
+    );
+    return null;
   }
 
-  // マーカー自体は見つかっている（namespace は一致）のに値が無効なケース。
-  // マーカーが無いだけの「機能オフ」（正常な沈黙）と区別できるよう警告を出す。
-  console.warn(
-    `${LOG_PREFIX} invalid heading count metric "${value}". Expected one of: ${VALID_HEADING_METRICS.join(', ')}.`,
-  );
-  return null;
+  let maxLevel = DEFAULT_MAX_HEADING_LEVEL;
+  if (rawLevel !== undefined) {
+    const match = HEADING_LEVEL_SPEC_RE.exec(rawLevel);
+    if (!match) {
+      console.warn(`${LOG_PREFIX} invalid heading level "${rawLevel}". Expected h1-h6 (e.g. "chars:h3").`);
+      return null;
+    }
+    maxLevel = Number(match[1]);
+  }
+
+  return { metric: rawMetric as HeadingCountMetric, maxLevel };
 };
 
 const HEADING_SELECTOR = 'h1, h2, h3, h4, h5, h6';
@@ -444,18 +473,21 @@ const cleanupHeadingBadges = (wiki: HTMLElement): void => {
 const updateHeadingBadges = (wiki: HTMLElement): void => {
   cleanupHeadingBadges(wiki);
 
-  const metric = findHeadingCountMetric(wiki);
-  if (!metric) return;
+  const config = findHeadingCountConfig(wiki);
+  if (!config) return;
 
   const sections = collectHeadingSections(wiki);
   const inputs: HeadingCountInput[] = sections.map((section) => ({
     level: section.level,
-    ownCount: pickMetricValue(computeStats(section.ownText), metric),
+    ownCount: pickMetricValue(computeStats(section.ownText), config.metric),
   }));
+  // 集計（aggregateHeadingCounts）は常に全見出しを対象にする。maxLevel はあくまで
+  // バッジの「表示」を絞り込むだけで、深い見出しの内容は引き続き上位の合計に含まれる。
   const results = aggregateHeadingCounts(inputs);
 
   sections.forEach((section, i) => {
-    section.element.appendChild(buildHeadingBadge(results[i], metric));
+    if (section.level > config.maxLevel) return;
+    section.element.appendChild(buildHeadingBadge(results[i], config.metric));
   });
 };
 

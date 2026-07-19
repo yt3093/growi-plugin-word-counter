@@ -40,7 +40,8 @@
 | 機能 | 説明 |
 |---|---|
 | オプトインの埋め込みタグ | ページ本文のどこかに ` ```gpwc-headings:chars ` のようなコードフェンスを1つ埋め込むと、そのページの全見出し（h1〜h6）にカウントバッジが表示される。値は `chars` / `chars-no-space` / `words` のいずれか1つを選択（`countWords` と同じロジックを使い分ける）。埋め込みが無いページでは何も表示されない（デフォルト無効）。マーカーのコードフェンス自体は `pre` 除外により本文カウントにも混入せず、見た目にも `.gpwc-heading-count-marker` クラスで非表示にする |
-| GROWI コアのフェンス解析挙動（実機確認済み・注意） | `` ```gpwc-headings:chars `` は GROWI 本体の言語:ファイル名パーサーによって**コロンではなくハイフンの位置**で区切られ、`<code class="language-gpwc">` + `<cite class="code-highlighted-title">headings:chars</cite>` という構造になる（一般的な `言語:ファイル名` のコロン分割ではない、GROWI 固有の挙動）。`findHeadingCountMetric` は `code[class*="language-gpwc"]` を起点に検出し、`<cite>` のテキストを `"headings:" + 値` の形式としてパースする |
+| GROWI コアのフェンス解析挙動（実機確認済み・注意） | `` ```gpwc-headings:chars `` は GROWI 本体の言語:ファイル名パーサーによって**コロンではなくハイフンの位置**で区切られ、`<code class="language-gpwc">` + `<cite class="code-highlighted-title">headings:chars</cite>` という構造になる（一般的な `言語:ファイル名` のコロン分割ではない、GROWI 固有の挙動）。`findHeadingCountConfig` は `code[class*="language-gpwc"]` を起点に検出し、`<cite>` のテキストを `"headings:" + 値` の形式としてパースする |
+| 見出しレベルの絞り込み（表示のみ） | ` ```gpwc-headings:chars:h3 ` のように値に `:hN`（N=1〜6）を続けると、そのレベルより深い見出しはバッジを表示しない。省略時は h1〜h6 すべて表示。集計（`aggregateHeadingCounts`）自体は常に全見出しを対象にするため、非表示にした深い見出しの内容も上位見出しの合計には引き続き含まれる（表示のみを絞り込む設計） |
 | 見出し単位の本文抽出 | `collectHeadingSections(wiki)` が `.wiki` 内の全見出し（`querySelectorAll`、ネスト深さ不問）を文書順に取得し、`Range` API で各見出しの「自身の内容」（その見出し直後から次の見出し直前まで。見出しタイトル自体は含まない）を切り出す。`<blockquote>` 内にネストされた見出し（CommonMark 上 `> # 見出し` は文法上有効）も見落とさない。`getBodyText` と同じ `EXCLUDED_SELECTORS` + `extractTextWithBlockBreaks` で抽出する |
 | 無効な指標値への警告 | オプトインマーカーは見つかった（`"headings:"` 名前空間は一致）が値が `chars`/`chars-no-space`/`words` のいずれでもない場合、`console.warn('[growi-plugin-word-counter] invalid heading count metric ...')` を出す。マーカー自体が無い（機能オフ、正常な沈黙）場合との違いが分かるようにしている |
 | 階層集計ロジック | `aggregateHeadingCounts`（`src/headingCounts.ts`、DOM 非依存の純粋関数）が見出しレベルに基づくスタック走査で親子関係を求め、文書順の逆順に集計することで多段ネストも正しく積み上げる。子を持つ見出しは「自身/配下すべて合計」、末端見出し（子なし）は自身のみを表示する。同階層の兄弟見出し同士は互いのカウントを含まない（共通の祖先にのみ加算） |
@@ -52,7 +53,6 @@
 
 - 選択範囲のみのカウント（現状は本文全体のみが対象）
 - 見出しカウント機能: 複数指標の同時表示（現状は `chars`/`chars-no-space`/`words` から1つのみ選択）
-- 見出しカウント機能: 対象見出しレベルの絞り込み（現状は h1〜h6 すべてが対象）
 - 見出しカウント機能: バッジのツールチップ/aria-label でカウントの意味を説明する
 
 **確認済み・対応不要と判断したもの:**
@@ -125,7 +125,7 @@ growi-plugin-word-counter/
 
 - **`cleanupWiki(wiki)` / `cleanupAll()`**: ウィジェットを `remove()` し `data-gpwc-enhanced` を削除。`cleanupAll()` はページ上の全 `.gpwc-widget` に加え、全 `.gpwc-heading-badge` と `.gpwc-heading-count-marker`（見出しカウントのオプトインマーカーの非表示クラス）も削除・解除する（`unmount()` と非表示コンテキスト遷移時の両方で使用）。
 
-- **`findHeadingCountMetric(wiki)`**: 見出しカウント機能のオプトインマーカーを検出する。`code[class*="language-gpwc"]` を起点に、対応する `<pre>` に `gpwc-heading-count-marker` クラスを付与して非表示にし、`<cite class="code-highlighted-title">` のテキストを取得する。GROWI コアのフェンス解析は ` ```gpwc-headings:chars ` を**コロンではなくハイフンの位置**で区切るため、`<cite>` には `"headings:chars"` のように名前空間とコロンを含む文字列がまるごと入る（実機確認済み）。`"headings:"` プレフィックスを検証してから値を取り出し、`chars` / `chars-no-space` / `words` のいずれでもなければ `console.warn` を出して無効として扱う（マーカー自体が無い場合は警告なしで静かに無効。「オフ」と「設定ミス」を区別するため）。
+- **`findHeadingCountConfig(wiki)`**: 見出しカウント機能のオプトインマーカーを検出し `{ metric, maxLevel }` を返す。`code[class*="language-gpwc"]` を起点に、対応する `<pre>` に `gpwc-heading-count-marker` クラスを付与して非表示にし、`<cite class="code-highlighted-title">` のテキストを取得する。GROWI コアのフェンス解析は ` ```gpwc-headings:chars ` を**コロンではなくハイフンの位置**で区切るため、`<cite>` には `"headings:chars"` のように名前空間とコロンを含む文字列がまるごと入る（実機確認済み）。`"headings:"` プレフィックスを検証してから `citeText.split(':')` で `[指標, レベル指定?]` に分解する。指標が `chars` / `chars-no-space` / `words` のいずれでもなければ `console.warn` を出して無効として扱う（マーカー自体が無い場合は警告なしで静かに無効。「オフ」と「設定ミス」を区別するため）。レベル指定（`h1`〜`h6`）が付いていれば `maxLevel` に反映し、形式が不正なら同様に警告して無効化する。省略時は `DEFAULT_MAX_HEADING_LEVEL = 6`（全レベル表示）。
 
 - **`collectHeadingSections(wiki)`**: `.wiki` 内の全見出し（`wiki.querySelectorAll('h1, h2, h3, h4, h5, h6')`、ネスト深さ不問）を文書順に取得し、各見出しについて `document.createRange()` で `setStartAfter(heading)` 〜 `setEndBefore(次の見出し)`（最後の見出しは `setEnd(wiki, wiki.childNodes.length)`）の範囲を `cloneContents()` で切り出す。`Range` は開始・終了点が異なる深さの祖先にまたがっていても正確に境界を処理してくれるため、`.wiki` 直下の子要素だけでなく `<blockquote>` 内などにネストされた見出し（CommonMark 上 `> # 見出し` は文法上有効）も見落とさない。切り出した内容には `getBodyText` と同じ `EXCLUDED_SELECTORS` + `extractTextWithBlockBreaks` を適用する。テスト用に `export` している。
 
@@ -158,7 +158,7 @@ growi-plugin-word-counter/
 | セグメント内ラベルテキストクラス | `gpwc-seg-text` |
 | pluginActivators キー | `growi-plugin-word-counter` |
 | コンソールログ prefix | `[growi-plugin-word-counter]`（`LOG_PREFIX`） |
-| 見出しカウントのオプトインタグ | ` ```gpwc-headings:値 `（値は `chars` / `chars-no-space` / `words`） |
+| 見出しカウントのオプトインタグ | ` ```gpwc-headings:値[:hN] `（値は `chars` / `chars-no-space` / `words`。`:hN`（N=1〜6）は省略可で、指定時はそのレベルより深い見出しのバッジ表示を抑制） |
 | 見出しバッジクラス | `gpwc-heading-badge` |
 | 見出しバッジ内テキストクラス | `gpwc-heading-badge-text` |
 | 見出しカウントマーカー非表示クラス | `gpwc-heading-count-marker` |
@@ -224,7 +224,9 @@ GROWI はコメントの本文も `<div class="page-comment-body"><div class="wi
 
 本プロジェクトで見出しカウント機能のオプトインマーカーとして ` ```gpwc-headings:chars ` というフェンスを実機で試したところ、`gpwc-headings` という（実在しない）言語名は**ハイフンの位置で区切られ**、`<code class="language-gpwc">` となった。一方コロン以降を含む残り全体（`headings:chars`）は分割されずに `<cite class="code-highlighted-title">headings:chars</cite>` へまるごと出力された。
 
-この挙動を逆手に取り、`code[class*="language-gpwc"]` を検出の起点にし、`<cite>` のテキストを `"名前空間:値"` として自前でパースする実装にしている（`findHeadingCountMetric`）。**GROWI 本体のフェンス解析はコロン区切りだけでなくハイフンの影響も受ける**ことが実機で確認できたため、同様に `言語:ファイル名` 記法を利用した新機能を追加する際は、想定通りの区切り方になるか改めて実機確認すること。
+この挙動を逆手に取り、`code[class*="language-gpwc"]` を検出の起点にし、`<cite>` のテキストを `"名前空間:値"` として自前でパースする実装にしている（`findHeadingCountConfig`）。**GROWI 本体のフェンス解析はコロン区切りだけでなくハイフンの影響も受ける**ことが実機で確認できたため、同様に `言語:ファイル名` 記法を利用した新機能を追加する際は、想定通りの区切り方になるか改めて実機確認すること。
+
+なお `<cite>` の残り文字列（`"headings:chars"` 等）自体はハイフン分割の対象にならず丸ごと保持されることも実機確認済みなので、その中でさらに `:` 区切りの複数フィールド（例: `chars:h3` の指標+レベル指定）を自前でパースする分には問題なく動作する。
 
 ## テスト
 
@@ -281,6 +283,9 @@ GROWI 管理画面 `/admin/plugins` で **削除 → 再インストール**。
 25. 見出しバッジのテキスト自体が、ページ全体ウィジェットのカウント・他の見出しの自身カウントいずれにも混入しない
 26. `.wiki` に `data-no-wordcount` を付与すると見出しバッジも表示されない
 27. プラグイン無効化（`unmount`）で見出しバッジとマーカーの非表示クラスが完全に消え、本文 DOM が元通りになる
+28. ` ```gpwc-headings:chars:h2 ` のようにレベル指定を付けると、h3 以降の見出しにバッジが表示されない
+29. レベル指定で非表示にした深い見出しの内容も、表示されている上位見出しの合計（分母側）には引き続き含まれる
+30. 存在しないレベル（例: `chars:h9`）や不正な形式を指定すると `console.warn` が出て機能全体が無効になる（バッジが1つも出ない）
 
 ## 会話ガイドライン
 
