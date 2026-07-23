@@ -71,8 +71,8 @@ const SHOW_WORDS = true;
 const SHOW_READING_MINUTES = true;
 
 let observer: MutationObserver | null = null;
-let originalPushState: typeof history.pushState | null = null;
-let originalReplaceState: typeof history.replaceState | null = null;
+let unpatchPushState: (() => void) | null = null;
+let unpatchReplaceState: (() => void) | null = null;
 let navigateHandler: (() => void) | null = null;
 let popstateHandler: (() => void) | null = null;
 let hashchangeHandler: (() => void) | null = null;
@@ -603,14 +603,33 @@ const handleMutations = (mutations: MutationRecord[]): void => {
   scheduleScan();
 };
 
+// pushState/replaceState は同一シグネチャ（`(data, unused, url?) => void`）なので
+// 1つのヘルパーで両方をラップできる。差し替え前の関数を戻り値の関数（クロージャ）に
+// 保持することで、`unpatchPushState`/`unpatchReplaceState` のようなモジュール共有変数を
+// ラップ関数の内部から読み直す必要が無くなる。仮に mount() が unmount() を挟まず
+// 複数回呼ばれても、各世代のラップ関数は生成時点の「元の関数」を確実に呼ぶため、
+// ラップ関数が自分自身を再帰的に呼び出す無限ループ（実機で発生していた
+// RangeError: Maximum call stack size exceeded）が構造的に起こらない。
+type HistoryStateMethod = (data: unknown, unused: string, url?: string | URL | null) => void;
+
+const patchHistoryMethod = (methodName: 'pushState' | 'replaceState'): (() => void) => {
+  const original: HistoryStateMethod = history[methodName].bind(history);
+  history[methodName] = (...args: Parameters<HistoryStateMethod>) => {
+    original(...args);
+    window.dispatchEvent(new Event(NAVIGATE_EVENT));
+  };
+  return () => {
+    history[methodName] = original;
+  };
+};
+
 export const createWordCounter = (): { mount(): void; unmount(): void } => {
   const mount = (): void => {
     // GROWI 側の事情で activate() が deactivate() を挟まず複数回呼ばれるケースへの対策。
-    // 二重に mount すると、history.pushState / replaceState の元関数を保持する
-    // originalPushState / originalReplaceState（モジュール共有の変数）が
-    // 「前回ラップした関数」で上書きされてしまい、ラップ関数が自分自身を再帰的に
-    // 呼び出して RangeError: Maximum call stack size exceeded を起こす（実機で発生確認済み）。
-    // 既に mount 済みなら何もしないことでこの状態を防ぐ。
+    // patchHistoryMethod がクロージャで元関数を保持するようになったため二重 patch 自体は
+    // 自己再帰を起こさなくなったが、二重に patch すると unmount() 側の1回の unpatch では
+    // 元に戻しきれず GROWI 標準の history 挙動が壊れたままになる。既に mount 済みなら
+    // 何もしないことでこの状態を防ぐ（実機で RangeError が発生した際の対策として導入）。
     if (isMounted) {
       console.warn(`${LOG_PREFIX} mount() called while already mounted; ignoring the duplicate call.`);
       return;
@@ -627,19 +646,8 @@ export const createWordCounter = (): { mount(): void; unmount(): void } => {
       attributeFilter: ['class'],
     });
 
-    originalPushState = history.pushState.bind(history);
-    originalReplaceState = history.replaceState.bind(history);
-
-    history.pushState = function pushState(...args: Parameters<typeof history.pushState>) {
-      const result = originalPushState!(...args);
-      window.dispatchEvent(new Event(NAVIGATE_EVENT));
-      return result;
-    };
-    history.replaceState = function replaceState(...args: Parameters<typeof history.replaceState>) {
-      const result = originalReplaceState!(...args);
-      window.dispatchEvent(new Event(NAVIGATE_EVENT));
-      return result;
-    };
+    unpatchPushState = patchHistoryMethod('pushState');
+    unpatchReplaceState = patchHistoryMethod('replaceState');
 
     navigateHandler = () => scheduleScan();
     popstateHandler = () => scheduleScan();
@@ -657,10 +665,10 @@ export const createWordCounter = (): { mount(): void; unmount(): void } => {
     observer?.disconnect();
     observer = null;
 
-    if (originalPushState) history.pushState = originalPushState;
-    if (originalReplaceState) history.replaceState = originalReplaceState;
-    originalPushState = null;
-    originalReplaceState = null;
+    unpatchPushState?.();
+    unpatchReplaceState?.();
+    unpatchPushState = null;
+    unpatchReplaceState = null;
 
     if (navigateHandler) window.removeEventListener(NAVIGATE_EVENT, navigateHandler);
     if (popstateHandler) window.removeEventListener('popstate', popstateHandler);

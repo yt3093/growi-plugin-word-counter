@@ -133,7 +133,7 @@ growi-plugin-word-counter/
 
 - **`buildHeadingBadge(result, metric)` / `updateHeadingBadges(wiki)` / `cleanupHeadingBadges(wiki)`**: 指標に応じたアイコン（`HEADING_METRIC_ICONS`、ページ全体ウィジェットと同じ `createSvgIcon`/`ICON_*` を再利用）と `自身/合計`（子を持つ場合）または `自身` のみ（末端の場合）のテキストからバッジを組み立てる。`updateHeadingBadges` は毎回 `cleanupHeadingBadges` で既存バッジを全削除してから作り直す（差分更新はしない。増減した見出しにも追従するため）。
 
-- **SPA 遷移検知**: `pushState` / `replaceState` にカスタムイベント `growi-pwc-navigate` をディスパッチするモンキーパッチ。`popstate` / `hashchange` も購読し、いずれも `scheduleScan()`（2 段 `requestAnimationFrame` で DOM 安定後に `scanAndEnhance()`）を呼ぶ。
+- **SPA 遷移検知**: `patchHistoryMethod(methodName)` ヘルパーが `pushState` / `replaceState` それぞれをラップし、呼び出し後にカスタムイベント `growi-pwc-navigate` をディスパッチする。元の関数は各呼び出しの**クロージャ内**に閉じ込め、モジュール共有の `let` 変数には戻り値の unpatch 関数（`unpatchPushState` / `unpatchReplaceState`）だけを保持する（ハマりどころ #14 参照）。`popstate` / `hashchange` も購読し、いずれも `scheduleScan()`（2 段 `requestAnimationFrame` で DOM 安定後に `scanAndEnhance()`）を呼ぶ。
 
 - **MutationObserver**: `document.body` を `childList: true, subtree: true, attributes: true, attributeFilter: ['class']` で監視。`attributes` タイプの mutation は `target === document.body` の場合のみ関心対象とする（編集モード遷移など body クラス変化の検知）。`childList` タイプの mutation は `isWikiRelatedMutation(mutation, wiki)` で `.wiki` 内部の変更か `.wiki` 自体の追加/削除かを判定し、無関係なら（ヘッダー通知バッジ・サイドバー等）スキップする。関心対象と判定されたものについてさらに `isSelfInjected(node)`（`.gpwc-widget` / `.gpwc-heading-badge` クラス判定）で自己注入ノードのみの追加/削除を除外し、無限ループを防止。最終的に関心対象の mutation があれば `isHiddenContext()` を判定し、true なら `cleanupAll()`、false なら `scheduleScan()`。
 
@@ -259,9 +259,24 @@ GROWI はコメントの本文も `<div class="page-comment-body"><div class="wi
 
 この状態で `history.pushState(...)` が呼ばれると、ラップ関数Bが `originalPushState`（＝ラップ関数A）を呼び出す。ラップ関数Aも自分の中で `originalPushState!(...args)` を参照するが、この変数は**呼び出し時点の最新値を都度読みに行く**（ラップ関数A定義時点の値をクロージャで固定的に捕まえているわけではない）ため、2回目の `mount()` で上書きされた「ラップ関数A自身」を指すようになっている。結果、**ラップ関数Aが自分自身を呼び出す無限再帰**になり、`history.pushState` を呼ぶあらゆる操作（GROWI 本体のページ遷移も含む）がクラッシュする。
 
-**対策**: `isMounted` フラグを追加し、`mount()`/`unmount()` を冪等にした。既に mount 済みの状態で `mount()` が呼ばれた場合は `console.warn` を出して何もしない（二重の monkey patch を防ぐ）。mount していない状態で `unmount()` が呼ばれた場合も何もせず即座に返る。`wordCounter.test.ts` に `mount()` を2回連続で呼んでから `history.pushState` を呼んでも例外が出ないことを検証する回帰テストがある。
+**対策1（応急）**: `isMounted` フラグを追加し、`mount()`/`unmount()` を冪等にした。既に mount 済みの状態で `mount()` が呼ばれた場合は `console.warn` を出して何もしない（二重の monkey patch を防ぐ）。mount していない状態で `unmount()` が呼ばれた場合も何もせず即座に返る。`wordCounter.test.ts` に `mount()` を2回連続で呼んでから `history.pushState` を呼んでも例外が出ないことを検証する回帰テストがある。
 
-**教訓**: `mount()`/`unmount()` のようなライフサイクル関数がモジュール共有の可変状態（`let` 変数）を書き換える設計になっている場合、外部から複数回連続で呼ばれる可能性（呼び出し元を完全には制御できない）を常に疑うこと。「呼び出し元は正しく `mount → unmount → mount → ...` の順で呼ぶはず」という前提は、GROWI のような外部フレームワークに組み込まれるプラグインでは保証されない。
+**対策2（根本・リファクタで追加）**: そもそも「元の関数をモジュール共有の `let` 変数で持ち、ラップ関数がそれを呼び出し時に都度読みに行く」設計自体が、複数回 patch されると自己参照を起こしうる脆い構造だった。`patchHistoryMethod(methodName)` ヘルパーを導入し、元の関数（`original`）をヘルパー内のローカル変数（＝ラップ関数のクロージャ）に閉じ込めるようにした:
+
+```ts
+const patchHistoryMethod = (methodName: 'pushState' | 'replaceState'): (() => void) => {
+  const original: HistoryStateMethod = history[methodName].bind(history);
+  history[methodName] = (...args) => {
+    original(...args);
+    window.dispatchEvent(new Event(NAVIGATE_EVENT));
+  };
+  return () => { history[methodName] = original; };
+};
+```
+
+モジュール共有の `let` 変数（`unpatchPushState` / `unpatchReplaceState`）には「元に戻すための関数」だけを持たせ、`original` そのものは各呼び出しごとに独立したクロージャの中に固定される。これにより、仮に `isMounted` ガードが将来外れて2回 patch されたとしても、各世代のラップ関数は自分の生成時点の `original` だけを参照するため、自己再帰は構造的に発生しなくなる。`isMounted` ガードは「2回 patch されると1回の unmount では戻しきれない」という別の問題（復元漏れ）を防ぐため、多重防御として引き続き残している。
+
+**教訓**: `mount()`/`unmount()` のようなライフサイクル関数がモジュール共有の可変状態（`let` 変数）を書き換える設計になっている場合、外部から複数回連続で呼ばれる可能性（呼び出し元を完全には制御できない）を常に疑うこと。「呼び出し元は正しく `mount → unmount → mount → ...` の順で呼ぶはず」という前提は、GROWI のような外部フレームワークに組み込まれるプラグインでは保証されない。ガード（`isMounted`）による対症療法と、状態をクロージャに閉じ込める根本的な設計変更は**両方**行うと堅牢性が高い（片方だけでは、ガードの実装ミスや将来の削除で再発しうる）。
 
 ## テスト
 
@@ -273,7 +288,7 @@ GROWI はコメントの本文も `<div class="page-comment-body"><div class="wi
 - **`wordCounter.test.ts`** には、この会話で実機の DOM から発見した回帰ケース（GROWI の見出しパーマリンク・見出し/表の編集ボタンのアイコンリガチャ・`<blockquote>\n<p>a</p>\n</blockquote>` の改行二重カウント等）をそのまま固定のテストケースとして含めている。今後 `EXCLUDED_SELECTORS` や `extractTextWithBlockBreaks` を変更する際は、まずこれらのテストを通すこと。
 - **`createWordCounter()` の統合テスト**は同期的に検証できる範囲（初回 `mount()`・`data-no-wordcount`・非表示コンテキスト・`unmount()` の完全復元）のみをカバーしている。`pushState`/`hashchange` 経由の非同期再スキャン（`requestAnimationFrame` 2 段待ち）は今回のスコープでは未カバー（フェイクタイマー等の追加セットアップが必要なため）。
 - **`headingCounts.test.ts`** はユーザー提示の2つの検証例（`h1:5/h2:6/h3:3` → `5/14, 6/9, 3` と、兄弟見出し `h1:5/h2①:3/h2②:2` → `5/10, 3, 2`）をそのままテストケース化している。`aggregateHeadingCounts` は DOM に依存しない純粋関数なので、見出しレベルの組み合わせパターン（レベルの飛び・複数の最上位見出し・深いネスト等）を直接・高速に検証できる。
-- **テストの落とし穴（この会話で実際に踏んだもの）**: 統合テストの `it()` 内で `expect` が失敗すると、その行より後ろの `counter.unmount()` に到達できず、`history.pushState` の監視パッチが元に戻らないまま次のテストに進んでしまう。`createWordCounter()` は `originalPushState` 等をモジュールスコープの共有状態として持つ設計のため、後続のテストで無関係な `TypeError: originalPushState is not a function` が連鎖的に発生する（実際に発生した）。統合テストを書く際は `mount()`/`unmount()` の対応漏れがないか、アサーションの正しさを先に確認すること。
+- **テストの落とし穴（この会話で実際に踏んだもの）**: 統合テストの `it()` 内で `expect` が失敗すると、その行より後ろの `counter.unmount()` に到達できず、`history.pushState` の監視パッチが元に戻らないまま次のテストに進んでしまう。`createWordCounter()` は `unpatchPushState`（旧: `originalPushState`）等をモジュールスコープの共有状態として持つ設計のため、後続のテストで無関係なエラー（当時は `TypeError: originalPushState is not a function`）が連鎖的に発生する（実際に発生した）。統合テストを書く際は `mount()`/`unmount()` の対応漏れがないか、アサーションの正しさを先に確認すること。
 
 ## デプロイ手順
 
