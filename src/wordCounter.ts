@@ -77,6 +77,7 @@ let navigateHandler: (() => void) | null = null;
 let popstateHandler: (() => void) | null = null;
 let hashchangeHandler: (() => void) | null = null;
 let scanScheduled = false;
+let isMounted = false;
 
 // `export` はテストから直接インポートするために付与している（client-entry.tsx は
 // createWordCounter のみを使うため、バンドル済み dist/ には影響しない）。
@@ -604,6 +605,18 @@ const handleMutations = (mutations: MutationRecord[]): void => {
 
 export const createWordCounter = (): { mount(): void; unmount(): void } => {
   const mount = (): void => {
+    // GROWI 側の事情で activate() が deactivate() を挟まず複数回呼ばれるケースへの対策。
+    // 二重に mount すると、history.pushState / replaceState の元関数を保持する
+    // originalPushState / originalReplaceState（モジュール共有の変数）が
+    // 「前回ラップした関数」で上書きされてしまい、ラップ関数が自分自身を再帰的に
+    // 呼び出して RangeError: Maximum call stack size exceeded を起こす（実機で発生確認済み）。
+    // 既に mount 済みなら何もしないことでこの状態を防ぐ。
+    if (isMounted) {
+      console.warn(`${LOG_PREFIX} mount() called while already mounted; ignoring the duplicate call.`);
+      return;
+    }
+    isMounted = true;
+
     scanAndEnhance();
 
     observer = new MutationObserver(handleMutations);
@@ -638,6 +651,9 @@ export const createWordCounter = (): { mount(): void; unmount(): void } => {
   };
 
   const unmount = (): void => {
+    if (!isMounted) return;
+    isMounted = false;
+
     observer?.disconnect();
     observer = null;
 

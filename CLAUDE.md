@@ -99,7 +99,7 @@ growi-plugin-word-counter/
 
 ### 主要な実装ポイント
 
-**`createWordCounter()`** が公開 API で `{ mount, unmount }` を返す。
+**`createWordCounter()`** が公開 API で `{ mount, unmount }` を返す。`mount()`/`unmount()` は `isMounted` フラグにより冪等（idempotent）にしてある: 既に mount 済みの状態で `mount()` が呼ばれた場合は `console.warn` を出して何もせず、mount していない状態で `unmount()` が呼ばれた場合は何もせず即座に返る（詳細はハマりどころ参照）。
 
 - **`scanAndEnhance()`**: `isHiddenContext()` が true なら全ウィジェットを `cleanupAll()` して終了。`getMainWiki()` で本文要素を取得し、`data-no-wordcount` があれば（付与済みなら）片付けて終了。`data-gpwc-enhanced` が未付与なら `enhanceWiki()`、付与済みなら `updateWiki()`（再計算のみ）。本体全体を `try/catch` で囲んでおり、GROWI の想定外の DOM 構造等で `getBodyText`/`computeStats`/`buildWidget` のいずれかが例外を投げても `console.error('[growi-plugin-word-counter] ...')` に留めて処理を継続する（1回の失敗でプラグインの以後の動作が止まらないようにするため）。
 
@@ -248,6 +248,21 @@ GROWI はコメントの本文も `<div class="page-comment-body"><div class="wi
 
 `:root`（＝ `<html>` 要素）はページ上のどの要素からも祖先になるため、`.gpwc-widget` と `.gpwc-heading-badge` の両方から同じ変数を参照でき、`html[data-bs-theme='dark']` や `@media (prefers-color-scheme: dark) { :root { ... } }` での上書きも両方に一括で効くようになった。フォールバック値（`var(--x, fallback)`）は「変数がどこにも定義されていない場合の保険」であり、「別の DOM 位置にいる要素にも値を届ける手段」としては使えないことに注意。**複数の自己注入要素（`.gpwc-widget` と `.gpwc-heading-badge` のように、DOM 上バラバラの場所に挿入される要素）でテーマ関連の値を共有したい場合は、宣言スコープを見直すこと。** また、`opacity` で見た目を似せるより、同じ CSS 変数を参照させる方が「本当に同じ色」になり、将来どちらかの色だけ変更されるドリフトも防げる。
 
+### 14. `mount()` が `unmount()` を挟まず複数回呼ばれると `history.pushState` が無限再帰する（実機でクラッシュ確認・修正済み）
+
+実機のブラウザコンソールで `RangeError: Maximum call stack size exceeded`（`history.pushState` が自分自身を延々と呼び続けるスタックトレース）が発生した。
+
+**原因**: `mount()` は `originalPushState`（モジュール共有の `let` 変数）に「現在の `history.pushState`」を保存してから、それを呼び出すラップ関数を `history.pushState` に設定する。GROWI 側の事情（SPA の再レンダリング等）で `activate()`（＝ `mount()`）が `deactivate()`（＝ `unmount()`）を挟まず2回連続で呼ばれると:
+
+1. 1回目の `mount()`: `originalPushState` = ネイティブの `pushState`。`history.pushState` = ラップ関数A（呼び出し時に `originalPushState` を参照）
+2. 2回目の `mount()`: `originalPushState` = **ラップ関数A**（この時点の `history.pushState` を捕まえてしまう）。`history.pushState` = ラップ関数B
+
+この状態で `history.pushState(...)` が呼ばれると、ラップ関数Bが `originalPushState`（＝ラップ関数A）を呼び出す。ラップ関数Aも自分の中で `originalPushState!(...args)` を参照するが、この変数は**呼び出し時点の最新値を都度読みに行く**（ラップ関数A定義時点の値をクロージャで固定的に捕まえているわけではない）ため、2回目の `mount()` で上書きされた「ラップ関数A自身」を指すようになっている。結果、**ラップ関数Aが自分自身を呼び出す無限再帰**になり、`history.pushState` を呼ぶあらゆる操作（GROWI 本体のページ遷移も含む）がクラッシュする。
+
+**対策**: `isMounted` フラグを追加し、`mount()`/`unmount()` を冪等にした。既に mount 済みの状態で `mount()` が呼ばれた場合は `console.warn` を出して何もしない（二重の monkey patch を防ぐ）。mount していない状態で `unmount()` が呼ばれた場合も何もせず即座に返る。`wordCounter.test.ts` に `mount()` を2回連続で呼んでから `history.pushState` を呼んでも例外が出ないことを検証する回帰テストがある。
+
+**教訓**: `mount()`/`unmount()` のようなライフサイクル関数がモジュール共有の可変状態（`let` 変数）を書き換える設計になっている場合、外部から複数回連続で呼ばれる可能性（呼び出し元を完全には制御できない）を常に疑うこと。「呼び出し元は正しく `mount → unmount → mount → ...` の順で呼ぶはず」という前提は、GROWI のような外部フレームワークに組み込まれるプラグインでは保証されない。
+
 ## テスト
 
 `pnpm test`（Vitest, `environment: 'jsdom'`）で `src/stats.test.ts` / `src/wordCounter.test.ts` / `src/headingCounts.test.ts` を実行する。`pnpm test:watch` でウォッチモード。
@@ -308,6 +323,8 @@ GROWI 管理画面 `/admin/plugins` で **削除 → 再インストール**。
 28. ` ```gpwc-headings:chars:h2 ` のようにレベル指定を付けると、h3 以降の見出しにバッジが表示されない
 29. レベル指定で非表示にした深い見出しの内容も、表示されている上位見出しの合計（分母側）には引き続き含まれる
 30. 存在しないレベル（例: `chars:h9`）や不正な形式を指定すると `console.warn` が出て機能全体が無効になる（バッジが1つも出ない）
+31. GROWI 上でページ遷移を繰り返しても、ブラウザコンソールに `RangeError: Maximum call stack size exceeded` が出ない（`history.pushState` の無限再帰バグの回帰確認）
+32. （可能であれば）プラグインの無効化→有効化を素早く連続で行っても、コンソールにエラーが出ずページ遷移が正常に機能する（`mount()` の二重呼び出し耐性の確認）
 
 ## 会話ガイドライン
 

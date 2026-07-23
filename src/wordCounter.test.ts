@@ -285,6 +285,50 @@ describe('createWordCounter (integration)', () => {
     cloneNodeSpy.mockRestore();
     consoleErrorSpy.mockRestore();
   });
+
+  it('does not corrupt history.pushState when mount() is called twice without an intervening unmount()', () => {
+    // 実機で発生した RangeError: Maximum call stack size exceeded の再現テスト。
+    // GROWI が activate() を deactivate() を挟まず複数回呼ぶと、2回目の mount() が
+    // 「1回目にラップした pushState」を誤って「元の pushState」として捕まえてしまい、
+    // ラップ関数が自分自身を再帰的に呼び出して無限再帰に陥っていた。
+    document.body.innerHTML = '<div class="wiki"><p>hello world</p></div>';
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const counter = createWordCounter();
+    counter.mount();
+    counter.mount(); // 2回目（本来は起きてはいけないが、防御的に無視される想定）
+
+    expect(consoleWarnSpy).toHaveBeenCalledOnce();
+    expect(consoleWarnSpy.mock.calls[0][0]).toContain('[growi-plugin-word-counter]');
+
+    // 修正前はここで RangeError: Maximum call stack size exceeded が発生していた
+    expect(() => window.history.pushState({}, '', '/some-other-page')).not.toThrow();
+
+    counter.unmount();
+    consoleWarnSpy.mockRestore();
+  });
+
+  it('unmount() is a safe no-op when called without a preceding mount()', () => {
+    const counter = createWordCounter();
+    expect(() => counter.unmount()).not.toThrow();
+  });
+
+  it('unmount() followed by mount() again works correctly (re-activation cycle)', () => {
+    document.body.innerHTML = '<div class="wiki"><p>hello world</p></div>';
+    const counter = createWordCounter();
+
+    counter.mount();
+    expect(document.querySelector('.gpwc-widget')).not.toBeNull();
+
+    counter.unmount();
+    expect(document.querySelector('.gpwc-widget')).toBeNull();
+
+    counter.mount();
+    expect(document.querySelector('.gpwc-widget')).not.toBeNull();
+    expect(() => window.history.pushState({}, '', '/re-mounted-page')).not.toThrow();
+
+    counter.unmount();
+  });
 });
 
 describe('collectHeadingSections', () => {
