@@ -1,9 +1,16 @@
-.gpwc-widget {
+:root {
+  /* --gpwc-fg（文字色）・--gpwc-icon-bg（アイコンバッジ背景色）は .gpwc-widget
+     （本文ウィジェット）だけでなく .gpwc-heading-badge（見出しタグの中に挿入されるため
+     .gpwc-widget の外）からも参照するため、両方から見える :root スコープで宣言する。
+     ダークモードでは下の @media/html[data-bs-theme] ブロックで上書きする。
+     --gpwc-icon-bg は白抜きアイコンとのコントラストを保ちつつ、暗い背景に対して
+     円自体の輪郭が埋もれて見えにくくなるのを防ぐため、より明るいトーンに切り替える。 */
   --gpwc-fg: rgba(0, 0, 0, 0.6);
-  --gpwc-divider: rgba(0, 0, 0, 0.1);
-  /* アイコンバッジの背景色。白抜きアイコンとのコントラストを保つため、
-     ライト/ダークいずれのテーマでも切り替えない固定値にする。 */
   --gpwc-icon-bg: rgba(71, 85, 105, 0.9);
+}
+
+.gpwc-widget {
+  --gpwc-divider: rgba(0, 0, 0, 0.1);
 
   display: flex;
   flex-wrap: wrap;
@@ -33,15 +40,14 @@
 }
 
 .gpwc-seg-icon-bg {
-  /* 見出しバッジ（.gpwc-heading-badge）は .gpwc-widget の外（見出しタグの中）に
-     配置されるため、同じアイコンを流用しても --gpwc-icon-bg 変数が届かない。
-     フォールバック値を指定し、どちらの文脈でも同じ色で描画されるようにする。 */
-  fill: var(--gpwc-icon-bg, rgba(71, 85, 105, 0.9));
+  fill: var(--gpwc-icon-bg);
   stroke: none;
 }
 
 /* 見出しごとのカウントバッジ（オプトイン機能）。見出しタグ自身の子要素として挿入されるため
-   .gpwc-widget のスコープ外にあり、色はテーマに関わらず opacity で控えめに見せる。 */
+   .gpwc-widget のスコープ外にあるが、アイコン背景色・テキスト色ともに :root スコープの
+   --gpwc-icon-bg / --gpwc-fg を共有するため、ページ全体ウィジェットと完全に同じ見た目
+   （色・ダークモード追従）になる。 */
 .gpwc-heading-badge {
   display: inline-flex;
   align-items: center;
@@ -50,7 +56,6 @@
   font-size: 0.55em;
   font-weight: 400;
   vertical-align: middle;
-  opacity: 0.6;
   user-select: none;
 }
 
@@ -60,20 +65,35 @@
   flex-shrink: 0;
 }
 
+.gpwc-heading-badge-text {
+  color: var(--gpwc-fg);
+}
+
 /* 見出しカウント機能のオプトインマーカー（空のコードブロック）を非表示にする。 */
 .gpwc-heading-count-marker {
   display: none;
 }
 
 @media (prefers-color-scheme: dark) {
-  .gpwc-widget {
+  :root {
     --gpwc-fg: rgba(255, 255, 255, 0.7);
+    /* ライトモード用のスレートグレー（rgba(71,85,105,0.9)）は暗い背景と明度が近く、
+       円の輪郭が埋もれて見えにくかったため、ダークモードではより明るいトーンにする。
+       .gpwc-widget と .gpwc-heading-badge の両方のアイコンに反映される。 */
+    --gpwc-icon-bg: rgba(100, 116, 139, 1);
+  }
+
+  .gpwc-widget {
     --gpwc-divider: rgba(255, 255, 255, 0.14);
   }
 }
 
-html[data-bs-theme='dark'] .gpwc-widget {
+html[data-bs-theme='dark'] {
   --gpwc-fg: rgba(255, 255, 255, 0.7);
+  --gpwc-icon-bg: rgba(100, 116, 139, 1);
+}
+
+html[data-bs-theme='dark'] .gpwc-widget {
   --gpwc-divider: rgba(255, 255, 255, 0.14);
 }
 

@@ -12,7 +12,7 @@
 |---|---|
 | 文字数・単語数・読了時間表示 | ページ本文（`.wiki`）の先頭に `<div class="gpwc-widget">` を注入し、英語表記で `N chars / M chars (no spaces) / K words / ~T min read`（`toLocaleString()` で桁区切り）を表示。空白除く側は改行 `\n` も除去対象（`\s` にマッチするため） |
 | ミニマルなウィジェット外観 | 背景色・枠線・角丸ボックスは持たず、下端に薄い罫線（`border-bottom`、`--gpwc-divider`）のみで本文と区切る。セグメント間の「/」区切り文字も廃止し、`gap` によるスペースのみで区切る（本文に自然に馴染むデザイン方針。ピル/カード等の主張が強いデザイン案は不採用） |
-| SVG アイコン | 各指標（`.gpwc-seg`）の先頭に絵文字ではなく自己完結の SVG アイコンを配置。`currentColor` の円バッジ（`.gpwc-seg-icon-bg`、色は `--gpwc-icon-bg` で管理しテーマに関わらず固定）の上に、白抜きの図形（`stroke="white"` / `fill="white"`）を重ねるデザイン。`createSvgIcon`（`createElementNS` で `<svg>`/`<circle>`/`<g>`/`<text>`/`<line>`/`<rect>`/`<polyline>`/`<path>` を直接生成、`innerHTML` 不使用）が `SvgShapeDef[]`（`src/types.ts`）から組み立てる。文字数=太字の「A」、文字数(空白除く)=内向き矢印（圧縮）、単語数=吹き出し、読了時間=時計。単一の大きなモチーフで小サイズ表示でも判別しやすいデザインを採用（初期案の細線を複数組み合わせた抽象図形は視認性が低く不採用） |
+| SVG アイコン | 各指標（`.gpwc-seg`）の先頭に絵文字ではなく自己完結の SVG アイコンを配置。円バッジ（`.gpwc-seg-icon-bg`、色は `:root` スコープの `--gpwc-icon-bg` で管理。ライトモードは固定のスレートグレー、ダークモードでは暗い背景に埋もれないよう明るいトーンに切り替える）の上に、白抜きの図形（`stroke="white"` / `fill="white"`）を重ねるデザイン。`createSvgIcon`（`createElementNS` で `<svg>`/`<circle>`/`<g>`/`<text>`/`<line>`/`<rect>`/`<polyline>`/`<path>` を直接生成、`innerHTML` 不使用）が `SvgShapeDef[]`（`src/types.ts`）から組み立てる。文字数=太字の「A」、文字数(空白除く)=内向き矢印（圧縮）、単語数=吹き出し、読了時間=時計。単一の大きなモチーフで小サイズ表示でも判別しやすいデザインを採用（初期案の細線を複数組み合わせた抽象図形は視認性が低く不採用） |
 | 統計計算の分離 | `computeStats(text)`（`src/stats.ts`）が文字数（空白含む/除く）・単語数・読了時間の全指標を常に計算。UI 側は `wordCounter.ts` 内の `SHOW_*` 定数フラグで表示項目を選択する |
 | opt-out 属性 | `.wiki` 要素（またはその祖先経由で付与されたクラス）に `data-no-wordcount` があればウィジェット非表示 |
 | 非表示条件 | 管理画面（`/admin`）・編集モード（`/edit`, `#edit`, `body.editing`, `body.grw-editor-mode`, `body.modal-open`）では非表示 |
@@ -45,7 +45,7 @@
 | 見出し単位の本文抽出 | `collectHeadingSections(wiki)` が `.wiki` 内の全見出し（`querySelectorAll`、ネスト深さ不問）を文書順に取得し、`Range` API で各見出しの「自身の内容」（その見出し直後から次の見出し直前まで。見出しタイトル自体は含まない）を切り出す。`<blockquote>` 内にネストされた見出し（CommonMark 上 `> # 見出し` は文法上有効）も見落とさない。`getBodyText` と同じ `EXCLUDED_SELECTORS` + `extractTextWithBlockBreaks` で抽出する |
 | 無効な指標値への警告 | オプトインマーカーは見つかった（`"headings:"` 名前空間は一致）が値が `chars`/`chars-no-space`/`words` のいずれでもない場合、`console.warn('[growi-plugin-word-counter] invalid heading count metric ...')` を出す。マーカー自体が無い（機能オフ、正常な沈黙）場合との違いが分かるようにしている |
 | 階層集計ロジック | `aggregateHeadingCounts`（`src/headingCounts.ts`、DOM 非依存の純粋関数）が見出しレベルに基づくスタック走査で親子関係を求め、文書順の逆順に集計することで多段ネストも正しく積み上げる。子を持つ見出しは「自身/配下すべて合計」、末端見出し（子なし）は自身のみを表示する。同階層の兄弟見出し同士は互いのカウントを含まない（共通の祖先にのみ加算） |
-| 見出しバッジの表示 | 各見出し要素の末尾に `<span class="gpwc-heading-badge">` を追加。ページ全体ウィジェットと同じ `createSvgIcon` の白抜きバッジアイコン（`chars`=太字「A」、`chars-no-space`=内向き矢印、`words`=吹き出し）を指標に応じて使い回す。子を持つ見出しは `自身/合計`、末端見出しは `自身` のみを表示（分母なし） |
+| 見出しバッジの表示 | 各見出し要素の末尾に `<span class="gpwc-heading-badge">` を追加。ページ全体ウィジェットと同じ `createSvgIcon` の白抜きバッジアイコン（`chars`=太字「A」、`chars-no-space`=内向き矢印、`words`=吹き出し）を指標に応じて使い回す。子を持つ見出しは `自身/合計`、末端見出しは `自身` のみを表示（分母なし）。アイコン・テキストともにページ全体ウィジェットと完全に同じ色（`--gpwc-icon-bg` / `--gpwc-fg`、いずれも `:root` スコープで共有）にしている |
 | 自己参照除外 | 見出しバッジ自身のテキスト（`"6/9"` 等）はページ全体ウィジェットのカウント・見出しごとのカウントいずれにも混入しないよう `EXCLUDED_SELECTORS` に `.gpwc-heading-badge` を追加している。また `isSelfInjected` にも `.gpwc-heading-badge` を追加し、バッジの挿入/再構築自体が MutationObserver の無限ループを起こさないようにしている |
 | ライフサイクル統合 | `data-no-wordcount` によるオプトアウト・`isHiddenContext()` による非表示条件・`unmount()` による完全復元は、ページ全体ウィジェットと同じ条件で見出しバッジにも適用される（`cleanupHeadingBadges` / `cleanupAll` 内のバッジ・マーカー非表示クラスの除去） |
 
@@ -117,7 +117,7 @@ growi-plugin-word-counter/
 
 - **`createSegment(icon, text)`**: `<span class="gpwc-seg">` の中に `createSvgIcon(icon)` の SVG と `<span class="gpwc-seg-text">` のラベルテキストを並べる。
 
-- **`createSvgIcon(shapes)`**: `<svg viewBox="0 0 24 24">` の中に、まず `<circle class="gpwc-seg-icon-bg" r="11">`（円バッジ、塗りは CSS の `--gpwc-icon-bg` で管理）を配置し、続けて `<g transform="translate(12,12) scale(0.7) translate(-12,-12)" fill="none" stroke="white">` でアイコン本体を中心基準に縮小して重ねる（元の座標は 24x24 いっぱいを使う想定のため、円バッジ内に収まるよう縮小している）。`g` の子要素は `SvgShapeDef[]`（`{ tag, attrs, text? }` の配列）から `document.createElementNS` で直接生成する（`innerHTML` は使わない）。`text` が指定された要素（`<text>`）には `el.textContent = text` を設定する（アイコン定義は自前のハードコード文字列のみで外部/ユーザー入力を扱わないため安全）。文字数用（`ICON_CHARS`: `<text>` で太字の「A」1文字、`fill="white"` で明示的に白抜き指定）・文字数(空白除く)用（`ICON_CHARS_NO_SPACE`: `line` + `polyline` で内向き矢印2本＝圧縮イメージ、`g` の `stroke="white"` を継承）・単語数用（`ICON_WORDS`: `rect` + `path` で吹き出し）・読了時間用（`ICON_CLOCK`: `circle` + `line` で時計）の4種類を定義。細い線を複数組み合わせた抽象図形は 1em 前後の表示サイズでは視認性が低いため、単一の大きなモチーフで判別しやすくする方針にしている。
+- **`createSvgIcon(shapes)`**: `<svg viewBox="0 0 24 24">` の中に、まず `<circle class="gpwc-seg-icon-bg" r="11">`（円バッジ、塗りは CSS の `:root` スコープの `--gpwc-icon-bg` で管理。`.gpwc-widget`・`.gpwc-heading-badge` どちらの文脈でも参照できるよう、あえて要素スコープではなく `:root` に宣言している）を配置し、続けて `<g transform="translate(12,12) scale(0.7) translate(-12,-12)" fill="none" stroke="white">` でアイコン本体を中心基準に縮小して重ねる（元の座標は 24x24 いっぱいを使う想定のため、円バッジ内に収まるよう縮小している）。`g` の子要素は `SvgShapeDef[]`（`{ tag, attrs, text? }` の配列）から `document.createElementNS` で直接生成する（`innerHTML` は使わない）。`text` が指定された要素（`<text>`）には `el.textContent = text` を設定する（アイコン定義は自前のハードコード文字列のみで外部/ユーザー入力を扱わないため安全）。文字数用（`ICON_CHARS`: `<text>` で太字の「A」1文字、`fill="white"` で明示的に白抜き指定）・文字数(空白除く)用（`ICON_CHARS_NO_SPACE`: `line` + `polyline` で内向き矢印2本＝圧縮イメージ、`g` の `stroke="white"` を継承）・単語数用（`ICON_WORDS`: `rect` + `path` で吹き出し）・読了時間用（`ICON_CLOCK`: `circle` + `line` で時計）の4種類を定義。細い線を複数組み合わせた抽象図形は 1em 前後の表示サイズでは視認性が低いため、単一の大きなモチーフで判別しやすくする方針にしている。
 
 - **`enhanceWiki(wiki)`**: `computeStats(getBodyText(wiki))` → `buildWidget()` を `wiki.prepend()`、`data-gpwc-enhanced="1"` を設定。
 
@@ -154,7 +154,8 @@ growi-plugin-word-counter/
 | ウィジェット内セグメントクラス | `gpwc-seg` |
 | セグメント内 SVG アイコンクラス | `gpwc-seg-icon` |
 | アイコンバッジ背景クラス | `gpwc-seg-icon-bg` |
-| アイコンバッジ背景色変数 | `--gpwc-icon-bg`（テーマ非依存の固定値） |
+| アイコンバッジ背景色変数 | `--gpwc-icon-bg`（`:root` スコープ。ライトモードは固定値、ダークモードでは明るいトーンに上書き） |
+| ウィジェット/バッジ文字色変数 | `--gpwc-fg`（`:root` スコープ。`.gpwc-widget` と `.gpwc-heading-badge-text` で共有） |
 | セグメント内ラベルテキストクラス | `gpwc-seg-text` |
 | pluginActivators キー | `growi-plugin-word-counter` |
 | コンソールログ prefix | `[growi-plugin-word-counter]`（`LOG_PREFIX`） |
@@ -239,6 +240,14 @@ GROWI はコメントの本文も `<div class="page-comment-body"><div class="wi
 
 なお `<cite>` の残り文字列（`"headings:chars"` 等）自体はハイフン分割の対象にならず丸ごと保持されることも実機確認済みなので、その中でさらに `:` 区切りの複数フィールド（例: `chars:h3` の指標+レベル指定）を自前でパースする分には問題なく動作する。
 
+### 13. CSS カスタムプロパティを複数の注入先で共有する場合は `:root` スコープで宣言する
+
+`--gpwc-icon-bg`（アイコンバッジの背景色）は当初 `.gpwc-widget` セレクタ内で宣言していた。`.gpwc-widget` は `.wiki` に `prepend()` される要素だが、見出しバッジ（`.gpwc-heading-badge`）は見出しタグ（`<h1>` 等）の子要素として挿入されるため、DOM 上 `.gpwc-widget` の子孫ではない。CSS カスタムプロパティは通常の CSS プロパティと同様に**祖先からの継承でしか伝播しない**ため、`.gpwc-heading-badge` 側では `--gpwc-icon-bg` が未定義になり、`var(--gpwc-icon-bg, フォールバック値)` のフォールバックに頼っていた（ダークモードの上書きにも追従しなかった）。
+
+ダークモードでアイコンの視認性を上げる対応をした際、見出しバッジにも同じ改善を反映する必要が生じたため、`--gpwc-icon-bg` の宣言場所を `.gpwc-widget` から `:root` に移動した。続けて「見出しバッジのテキスト色もページ全体ウィジェットと完全に同じにしたい」という要望があり、`--gpwc-fg`（文字色）も同じ理由で `.gpwc-widget` → `:root` に移動し、`.gpwc-heading-badge-text { opacity: 0.6 }`（見た目だけ似せる場当たり的な対応）を `.gpwc-heading-badge-text { color: var(--gpwc-fg) }`（同じ変数を参照する対応）に置き換えた。
+
+`:root`（＝ `<html>` 要素）はページ上のどの要素からも祖先になるため、`.gpwc-widget` と `.gpwc-heading-badge` の両方から同じ変数を参照でき、`html[data-bs-theme='dark']` や `@media (prefers-color-scheme: dark) { :root { ... } }` での上書きも両方に一括で効くようになった。フォールバック値（`var(--x, fallback)`）は「変数がどこにも定義されていない場合の保険」であり、「別の DOM 位置にいる要素にも値を届ける手段」としては使えないことに注意。**複数の自己注入要素（`.gpwc-widget` と `.gpwc-heading-badge` のように、DOM 上バラバラの場所に挿入される要素）でテーマ関連の値を共有したい場合は、宣言スコープを見直すこと。** また、`opacity` で見た目を似せるより、同じ CSS 変数を参照させる方が「本当に同じ色」になり、将来どちらかの色だけ変更されるドリフトも防げる。
+
 ## テスト
 
 `pnpm test`（Vitest, `environment: 'jsdom'`）で `src/stats.test.ts` / `src/wordCounter.test.ts` / `src/headingCounts.test.ts` を実行する。`pnpm test:watch` でウォッチモード。
@@ -270,7 +279,9 @@ GROWI 管理画面 `/admin/plugins` で **削除 → 再インストール**。
 3. 閲覧モードでページを開くと本文先頭に `N chars / M chars (no spaces) / K words / ~T min read` ウィジェットが表示される
 4. 表示文字数がページ本文の実文字数と一致する（ウィジェット自身の文字は含まない）
 4a. 各指標（chars / chars (no spaces) / words / min read）の先頭に、絵文字ではなく SVG アイコンが表示される（太字の「A」・内向き矢印・吹き出し・時計）。小サイズでも図形が判別できる
-4b. 各アイコンが円形の塗りバッジ＋白抜き図形で表示される。ダークモードに切り替えても円バッジの色が変わらず、白い図形が引き続き視認できる（`--gpwc-icon-bg` がテーマ非依存のため）
+4b. 各アイコンが円形の塗りバッジ＋白抜き図形で表示される。ダークモードに切り替えると円バッジがより明るいトーンになり、暗い背景でも円の輪郭・白い図形がはっきり視認できる（`--gpwc-icon-bg` のダークモード上書きにより、ライトモード時の色そのままだと暗い背景に埋もれてしまう問題を回避している）
+4c. 見出しカウント機能を有効にしたページで、見出しバッジのアイコンもダークモードで同様に明るいトーンへ切り替わる（`.gpwc-widget` と `.gpwc-heading-badge` は `:root` スコープの `--gpwc-icon-bg` を共有しているため）
+4d. 見出しバッジのアイコン・テキストが、ページ全体ウィジェットのアイコン・テキストと完全に同じ色で表示される（ライトモード・ダークモードいずれも）
 5. `.wiki` に `data-no-wordcount` を付与するとウィジェットが表示されない
 6. `/edit`・`#edit`・編集モードへ遷移するとウィジェットが消える（cleanupAll）
 7. 編集モードから閲覧モードに戻るとウィジェットが再生成される
