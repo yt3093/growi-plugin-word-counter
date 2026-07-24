@@ -1,0 +1,105 @@
+:root {
+  /* --gpwc-fg（文字色）・--gpwc-icon-bg（アイコンバッジ背景色）は .gpwc-widget
+     （本文ウィジェット）だけでなく .gpwc-heading-badge（見出しタグの中に挿入されるため
+     .gpwc-widget の外）からも参照するため、両方から見える :root スコープで宣言する。
+     ダークモードでは下の @media/html[data-bs-theme] ブロックで上書きする。
+     --gpwc-icon-bg は白抜きアイコンとのコントラストを保ちつつ、暗い背景に対して
+     円自体の輪郭が埋もれて見えにくくなるのを防ぐため、より明るいトーンに切り替える。 */
+  --gpwc-fg: rgba(0, 0, 0, 0.6);
+  --gpwc-icon-bg: rgba(71, 85, 105, 0.9);
+}
+
+.gpwc-widget {
+  --gpwc-divider: rgba(0, 0, 0, 0.1);
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4em 1.1em;
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 1.1rem;
+  padding-bottom: 0.6em;
+  border-bottom: 1px solid var(--gpwc-divider);
+  color: var(--gpwc-fg);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  user-select: none;
+}
+
+.gpwc-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+}
+
+.gpwc-seg-icon {
+  flex-shrink: 0;
+  width: 1.3em;
+  height: 1.3em;
+}
+
+.gpwc-seg-icon-bg {
+  fill: var(--gpwc-icon-bg);
+  stroke: none;
+}
+
+/* 見出しごとのカウントバッジ（オプトイン機能）。見出しタグ自身の子要素として挿入されるため
+   .gpwc-widget のスコープ外にあるが、アイコン背景色・テキスト色ともに :root スコープの
+   --gpwc-icon-bg / --gpwc-fg を共有するため、ページ全体ウィジェットと完全に同じ見た目
+   （色・ダークモード追従）になる。 */
+.gpwc-heading-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  margin-left: 0.6em;
+  font-size: 0.55em;
+  font-weight: 400;
+  vertical-align: middle;
+  user-select: none;
+}
+
+.gpwc-heading-badge .gpwc-seg-icon {
+  width: 1.2em;
+  height: 1.2em;
+  flex-shrink: 0;
+}
+
+.gpwc-heading-badge-text {
+  color: var(--gpwc-fg);
+}
+
+/* 見出しカウント機能のオプトインマーカー（空のコードブロック）を非表示にする。 */
+.gpwc-heading-count-marker {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --gpwc-fg: rgba(255, 255, 255, 0.7);
+    /* ライトモード用のスレートグレー（rgba(71,85,105,0.9)）は暗い背景と明度が近く、
+       円の輪郭が埋もれて見えにくかったため、ダークモードではより明るいトーンにする。
+       .gpwc-widget と .gpwc-heading-badge の両方のアイコンに反映される。 */
+    --gpwc-icon-bg: rgba(100, 116, 139, 1);
+  }
+
+  .gpwc-widget {
+    --gpwc-divider: rgba(255, 255, 255, 0.14);
+  }
+}
+
+html[data-bs-theme='dark'] {
+  --gpwc-fg: rgba(255, 255, 255, 0.7);
+  --gpwc-icon-bg: rgba(100, 116, 139, 1);
+}
+
+html[data-bs-theme='dark'] .gpwc-widget {
+  --gpwc-divider: rgba(255, 255, 255, 0.14);
+}
+
+@media print {
+  .gpwc-widget,
+  .gpwc-heading-badge {
+    display: none;
+  }
+}
